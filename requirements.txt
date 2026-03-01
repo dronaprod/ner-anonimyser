@@ -1,0 +1,10 @@
+gliner>=0.2.16
+torch>=2.0.0
+transformers>=4.36.0
+accelerate>=0.25.0
+pypdf>=4.0.0
+python-docx>=1.1.0
+openpyxl>=3.1.0
+# Install spacy first (pin to 3.7.x for pre-built wheels; 3.8+ often builds from source and hangs)
+spacy>=3.5,<3.8
+presidio-analyzer>=2.2.355
