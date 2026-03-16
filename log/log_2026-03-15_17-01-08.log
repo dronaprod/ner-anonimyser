@@ -1,0 +1,43 @@
+2026-03-15 17:01:08 [INFO] Logging to /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/log/log_2026-03-15_17-01-08.log
+2026-03-15 17:01:08 [INFO] Presidio: available (in-process)
+2026-03-15 17:01:08 [INFO] Qwen NER (Ollama): enabled
+2026-03-15 17:01:08 [INFO] Loading GLiNER model: urchade/gliner_medium-v2.1
+2026-03-15 17:01:14 [INFO] Processing file name start : committees-pending-action-cat-mod-primer.pdf
+2026-03-15 17:01:16 [INFO] chunk number : 1
+2026-03-15 17:01:17 [DEBUG] Presidio engine created successfully
+2026-03-15 17:01:17 [DEBUG] Presidio analyze returned 17 raw results
+2026-03-15 17:02:33 [INFO] Qwen NER (Ollama) returned no parseable entities. Raw reply (first 700 chars): (empty)
+2026-03-15 17:02:33 [INFO] Piis found in the chunk by presidio : [{"value": "the Property and Casualty Insurance (C) Committee", "pii_type": "organization"}, {"value": "NAIC/Federal Emergency Management Agency", "pii_type": "organization"}, {"value": "The Vulnerability Module", "pii_type": "organization"}, {"value": "a Catastrophe Model", "pii_type": "person"}, {"value": "The Hazard Module", "pii_type": "organization"}, {"value": "Model Components", "pii_type": "organization"}, {"value": "NAIC Catastrophe", "pii_type": "person"}, {"value": "March 25, 2025", "pii_type": "date"}, {"value": "Aug. 13, 2025", "pii_type": "date"}, {"value": "Working Group", "pii_type": "organization"}, {"value": "March 2025", "pii_type": "date"}, {"value": "Aug. 13,", "pii_type": "date"}, {"value": "Plenary", "pii_type": "address"}, {"value": "Primer", "pii_type": "organization"}, {"value": "2025", "pii_type": "date"}, {"value": "FEMA", "pii_type": "organization"}]
+2026-03-15 17:02:33 [INFO] Piis found in the chunk by gliner : [{"value": "Property and Casualty Insurance (C) Committee", "pii_type": "organization"}, {"value": "Federal Emergency Management Agency", "pii_type": "organization"}, {"value": "Catastrophe (C) Working Group", "pii_type": "organization"}, {"value": "Executive (EX) Committee", "pii_type": "organization"}, {"value": "March 25, 2025", "pii_type": "date"}, {"value": "Aug. 13, 2025", "pii_type": "date"}, {"value": "NAIC", "pii_type": "organization"}]
+2026-03-15 17:02:33 [INFO] Piis found in the chunk by qwen : []
+2026-03-15 17:02:33 [INFO] Piis found in the chunk (min_agreement=2) : [{"value": "March 25, 2025", "pii_type": "date"}, {"value": "Aug. 13, 2025", "pii_type": "date"}, {"value": "Precipitation", "pii_type": "suspicious_token"}, {"value": "Vulnerability", "pii_type": "suspicious_token"}]
+2026-03-15 17:03:10 [INFO] original and anonymized value in the chunk : [{"original_value": "March 25, 2025", "anonymized_value": "10/21/1989", "pii_type": "date"}, {"original_value": "Aug. 13, 2025", "anonymized_value": "11/05/1977", "pii_type": "date"}, {"original_value": "Precipitation", "anonymized_value": "Pr#########on", "pii_type": "suspicious_token"}, {"original_value": "Vulnerability", "anonymized_value": "Vu#########ty", "pii_type": "suspicious_token"}]
+2026-03-15 17:03:10 [INFO] replacement done
+2026-03-15 17:03:10 [INFO] Processing file name end : committees-pending-action-cat-mod-primer.pdf
+2026-03-15 17:03:12 [INFO] Processing file name start : PCI_30.pdf
+2026-03-15 17:03:12 [INFO] chunk number : 1
+2026-03-15 17:03:12 [DEBUG] Presidio analyze returned 1 raw results
+2026-03-15 17:04:25 [INFO] Qwen NER (Ollama) returned no parseable entities. Raw reply (first 700 chars): (empty)
+2026-03-15 17:04:25 [INFO] Piis found in the chunk by presidio : [{"value": "Enterprise Risk & Compliance Dossier Operational", "pii_type": "organization"}]
+2026-03-15 17:04:25 [INFO] Piis found in the chunk by gliner : []
+2026-03-15 17:04:25 [INFO] Piis found in the chunk by qwen : []
+2026-03-15 17:04:25 [INFO] Piis found in the chunk (min_agreement=2) : [{"value": "cross\u25a0functional", "pii_type": "suspicious_token"}, {"value": "observations", "pii_type": "suspicious_token"}]
+2026-03-15 17:05:02 [INFO] original and anonymized value in the chunk : [{"original_value": "cross\u25a0functional", "anonymized_value": "cr############al", "pii_type": "suspicious_token"}, {"original_value": "observations", "anonymized_value": "ob########ns", "pii_type": "suspicious_token"}]
+2026-03-15 17:05:02 [INFO] replacement done
+2026-03-15 17:05:02 [INFO] Processing file name end : PCI_30.pdf
+2026-03-15 17:05:02 [INFO] Processing file name start : PHI_30_en_Government.pdf
+2026-03-15 17:05:02 [INFO] chunk number : 1
+2026-03-15 17:05:02 [DEBUG] Presidio analyze returned 75 raw results
+2026-03-15 17:06:15 [INFO] Qwen NER (Ollama) returned no parseable entities. Raw reply (first 700 chars): (empty)
+2026-03-15 17:06:15 [INFO] Piis found in the chunk by presidio : [{"value": "BlueCross PPO 778392884 Patient Care Coordination Report", "pii_type": "organization"}, {"value": "Patient Care Coordination Report", "pii_type": "organization"}, {"value": "Jonathan Reed MRN", "pii_type": "person"}, {"value": "Metformin 500mg", "pii_type": "person"}, {"value": "BID Insurance", "pii_type": "organization"}, {"value": "Metformin 500", "pii_type": "person"}, {"value": "1981-04-12", "pii_type": "date"}]
+2026-03-15 17:06:15 [INFO] Piis found in the chunk by gliner : [{"value": "1981-04-12", "pii_type": "date"}, {"value": "BlueCross", "pii_type": "organization"}]
+2026-03-15 17:06:15 [INFO] Piis found in the chunk by qwen : []
+2026-03-15 17:06:15 [INFO] Piis found in the chunk (min_agreement=2) : [{"value": "Coordination", "pii_type": "suspicious_token"}, {"value": "1981-04-12", "pii_type": "date"}, {"value": "778392884", "pii_type": "suspicious_token"}, {"value": "884392", "pii_type": "suspicious_token"}]
+2026-03-15 17:06:52 [INFO] original and anonymized value in the chunk : [{"original_value": "Coordination", "anonymized_value": "Co########on", "pii_type": "suspicious_token"}, {"original_value": "1981-04-12", "anonymized_value": "1977-05-22", "pii_type": "date"}, {"original_value": "778392884", "anonymized_value": "7#######4", "pii_type": "suspicious_token"}, {"original_value": "884392", "anonymized_value": "8####2", "pii_type": "suspicious_token"}]
+2026-03-15 17:06:52 [INFO] replacement done
+2026-03-15 17:06:52 [INFO] Processing file name end : PHI_30_en_Government.pdf
+2026-03-15 17:06:52 [INFO] number of times all pii anonymized : 3
+2026-03-15 17:06:52 [INFO] number of times it was not : 0
+2026-03-15 17:06:52 [INFO] Report written: /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/db/reports/2026-03-15_17-06-52_report.json
+2026-03-15 17:06:52 [INFO] Config updated: /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/config.json (latest_report=db/reports/2026-03-15_17-06-52_report.json)
+2026-03-15 17:06:52 [INFO] Run meta written: /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/db/runs/2026-03-15_17-06-52/run_meta.json

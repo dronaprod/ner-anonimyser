@@ -8,3 +8,4 @@ openpyxl>=3.1.0
 # Install spacy first (pin to 3.7.x for pre-built wheels; 3.8+ often builds from source and hangs)
 spacy>=3.5,<3.8
 presidio-analyzer>=2.2.355
+flask>=2.3.0

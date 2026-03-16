@@ -1,0 +1,21 @@
+2026-03-15 16:17:15 [INFO] Logging to /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/log/log_2026-03-15_16-17-15.log
+2026-03-15 16:17:15 [INFO] Presidio: available (in-process)
+2026-03-15 16:17:15 [INFO] Qwen NER (Ollama): enabled
+2026-03-15 16:17:15 [INFO] Loading GLiNER model: urchade/gliner_medium-v2.1
+2026-03-15 16:17:20 [INFO] Processing file name start : committees-pending-action-cat-mod-primer.pdf
+2026-03-15 16:17:22 [INFO] chunk number : 1
+2026-03-15 16:17:23 [DEBUG] Presidio engine created successfully
+2026-03-15 16:17:23 [DEBUG] Presidio analyze returned 17 raw results
+2026-03-15 16:18:40 [INFO] Qwen NER (Ollama) returned no parseable entities. Raw reply (first 700 chars): (empty)
+2026-03-15 16:18:40 [INFO] Piis found in the chunk by presidio : [{"value": "the Property and Casualty Insurance (C) Committee", "pii_type": "organization"}, {"value": "NAIC/Federal Emergency Management Agency", "pii_type": "organization"}, {"value": "The Vulnerability Module", "pii_type": "organization"}, {"value": "a Catastrophe Model", "pii_type": "person"}, {"value": "The Hazard Module", "pii_type": "organization"}, {"value": "Model Components", "pii_type": "organization"}, {"value": "NAIC Catastrophe", "pii_type": "person"}, {"value": "March 25, 2025", "pii_type": "date"}, {"value": "Aug. 13, 2025", "pii_type": "date"}, {"value": "Working Group", "pii_type": "organization"}, {"value": "March 2025", "pii_type": "date"}, {"value": "Aug. 13,", "pii_type": "date"}, {"value": "Plenary", "pii_type": "address"}, {"value": "Primer", "pii_type": "organization"}, {"value": "2025", "pii_type": "date"}, {"value": "FEMA", "pii_type": "organization"}]
+2026-03-15 16:18:40 [INFO] Piis found in the chunk by gliner : [{"value": "Property and Casualty Insurance (C) Committee", "pii_type": "organization"}, {"value": "Federal Emergency Management Agency", "pii_type": "organization"}, {"value": "Catastrophe (C) Working Group", "pii_type": "organization"}, {"value": "Executive (EX) Committee", "pii_type": "organization"}, {"value": "March 25, 2025", "pii_type": "date"}, {"value": "Aug. 13, 2025", "pii_type": "date"}, {"value": "NAIC", "pii_type": "organization"}]
+2026-03-15 16:18:40 [INFO] Piis found in the chunk by qwen : []
+2026-03-15 16:18:40 [INFO] Piis found in the chunk (min_agreement=2) : [{"value": "March 25, 2025", "pii_type": "date"}, {"value": "Aug. 13, 2025", "pii_type": "date"}, {"value": "Precipitation", "pii_type": "suspicious_token"}, {"value": "Vulnerability", "pii_type": "suspicious_token"}]
+2026-03-15 16:19:16 [INFO] original and anonymized value in the chunk : [{"original_value": "March 25, 2025", "anonymized_value": "11/11/1991", "pii_type": "date"}, {"original_value": "Aug. 13, 2025", "anonymized_value": "03/12/1995", "pii_type": "date"}, {"original_value": "Precipitation", "anonymized_value": "Pr#########on", "pii_type": "suspicious_token"}, {"original_value": "Vulnerability", "anonymized_value": "Vu#########ty", "pii_type": "suspicious_token"}]
+2026-03-15 16:19:16 [INFO] replacement done
+2026-03-15 16:19:16 [INFO] Processing file name end : committees-pending-action-cat-mod-primer.pdf
+2026-03-15 16:19:18 [INFO] number of times all pii anonymized : 1
+2026-03-15 16:19:18 [INFO] number of times it was not : 0
+2026-03-15 16:19:18 [INFO] Report written: /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/db/reports/2026-03-15_16-19-18_report.json
+2026-03-15 16:19:18 [INFO] Config updated: /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/config.json (latest_report=db/reports/2026-03-15_16-19-18_report.json)
+2026-03-15 16:19:18 [INFO] Run meta written: /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/db/runs/2026-03-15_16-19-18/run_meta.json

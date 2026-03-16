@@ -5,13 +5,12 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 VENV_PY="${SCRIPT_DIR}/.venv/bin/python"
-VENV_PIP="${SCRIPT_DIR}/.venv/bin/pip"
-if [[ ! -x "$VENV_PIP" ]]; then
-  echo "Error: .venv not found. Create it with: python3 -m venv .venv"
+if [[ ! -x "$VENV_PY" ]]; then
+  echo "Error: .venv not found or broken. Recreate with: python3 -m venv .venv"
   exit 1
 fi
 echo "Installing spacy 3.7.x (wheel) + presidio-analyzer..."
-"$VENV_PIP" install "spacy>=3.5,<3.8" "presidio-analyzer>=2.2.355"
+"$VENV_PY" -m pip install "spacy>=3.5,<3.8" "presidio-analyzer>=2.2.355"
 echo "Downloading spaCy model en_core_web_sm..."
 "$VENV_PY" -m spacy download en_core_web_sm
 echo "Checking Presidio..."

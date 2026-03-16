@@ -11,3 +11,5 @@ logs/*
 .coverage
 .pytest_cache
 .pytest_cache
+data/
+db/

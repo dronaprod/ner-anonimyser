@@ -1,0 +1,68 @@
+{
+  "run_id": "2026-03-15_17-06-52",
+  "created_at": "2026-03-15T17:06:52.587529",
+  "report_path": "db/reports/2026-03-15_17-06-52_report.json",
+  "total_chunks_anonymized": 3,
+  "total_chunks_not_anonymized": 0,
+  "files": [
+    {
+      "file_name": "committees-pending-action-cat-mod-primer.pdf",
+      "entity_count": 4,
+      "entity_types": [
+        "date",
+        "suspicious_token"
+      ],
+      "chunks_processed": 1,
+      "chunk_logs": [
+        {
+          "chunk_index": 1,
+          "chunk_size": 1600,
+          "presidio_count": 16,
+          "gliner_count": 7,
+          "qwen_count": 0,
+          "agreed_count": 4,
+          "replacements_count": 4
+        }
+      ]
+    },
+    {
+      "file_name": "PCI_30.pdf",
+      "entity_count": 2,
+      "entity_types": [
+        "suspicious_token"
+      ],
+      "chunks_processed": 1,
+      "chunk_logs": [
+        {
+          "chunk_index": 1,
+          "chunk_size": 1600,
+          "presidio_count": 1,
+          "gliner_count": 0,
+          "qwen_count": 0,
+          "agreed_count": 2,
+          "replacements_count": 2
+        }
+      ]
+    },
+    {
+      "file_name": "PHI_30_en_Government.pdf",
+      "entity_count": 4,
+      "entity_types": [
+        "date",
+        "suspicious_token"
+      ],
+      "chunks_processed": 1,
+      "chunk_logs": [
+        {
+          "chunk_index": 1,
+          "chunk_size": 1600,
+          "presidio_count": 7,
+          "gliner_count": 2,
+          "qwen_count": 0,
+          "agreed_count": 4,
+          "replacements_count": 4
+        }
+      ]
+    }
+  ]
+}

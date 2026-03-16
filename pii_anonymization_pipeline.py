@@ -8,6 +8,7 @@ import math
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -22,31 +23,56 @@ from docx import Document
 from openpyxl import load_workbook
 from pypdf import PdfReader
 
-# Local modules: gliner, presidio (optional), and optional Gemma NER
+# Local modules: gliner, presidio (optional), and optional Qwen NER via Ollama
 from gliner_module import GLiNER
 from presidio_module import AnalyzerEngine, NlpEngineProvider
 try:
-    from gemma_ner_module import detect_pii_with_gemma as _gemma_ner_detect
+    from qwen_ollama_ner_module import detect_pii_with_qwen_ollama as _qwen_ner_detect
 except Exception:  # pragma: no cover
-    _gemma_ner_detect = None
+    _qwen_ner_detect = None
 
 
 SUPPORTED_SUFFIXES = {".pdf", ".docx", ".xlsx", ".txt"}
 GLINER_PII_LABELS = [
-    "name",
-    "person",
-    "email",
-    "phone number",
-    "address",
-    "organization",
-    "date of birth",
-    "date",
+     "name",
+    "first_name",
+    "last_name",
+
+    "date_of_birth",
+
     "ssn",
-    "passport number",
-    "credit card number",
-    "bank account number",
-    "ip address",
-    "username",
+    "national_id",
+    "tax_id",
+    "certificate_license_number",
+
+    "medical_record_number",
+    "health_plan_beneficiary_number",
+
+    "email",
+    "phone_number",
+
+    "street_address",
+    "address",
+    "city",
+    "state",
+    "postcode",
+    "country",
+
+    "ipv4",
+    "ipv6",
+    "device_identifier",
+    "unique_identifier",
+
+    "employee_id",
+    "customer_id",
+
+    "account_number",
+    "bank_routing_number",
+
+    "license_plate",
+    "vehicle_identifier",
+
+    "biometric_identifier"
 ]
 GLINER_PII_LABELS_SET = set(GLINER_PII_LABELS)
 PRESIDIO_TO_SHARED_LABEL = {
@@ -109,9 +135,9 @@ def setup_logging() -> None:
     ch.setFormatter(fmt)
     logger.addHandler(fh)
     logger.addHandler(ch)
-    gemma_logger = logging.getLogger("gemma_ner_module")
-    gemma_logger.setLevel(logging.DEBUG)
-    gemma_logger.addHandler(fh)
+    qwen_ner_logger = logging.getLogger("qwen_ollama_ner_module")
+    qwen_ner_logger.setLevel(logging.DEBUG)
+    qwen_ner_logger.addHandler(fh)
     logger.info("Logging to %s", log_file)
 
 
@@ -153,14 +179,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gliner-model",
         type=str,
-        default="urchade/gliner_medium-v2.1",
-        help="GLiNER model id.",
+        default="urchade/gliner_large-v2.1",
+        help="GLiNER model id (default: gliner_large-v2.1 for higher recall; use urchade/gliner_medium-v2.1 for less GPU/RAM).",
     )
     parser.add_argument(
         "--gliner-threshold",
         type=float,
-        default=0.45,
-        help="GLiNER confidence threshold.",
+        default=0.35,
+        help="GLiNER confidence threshold (default 0.35 for better recall on person names and PII; raise to 0.45+ to reduce false positives).",
     )
     parser.add_argument(
         "--presidio-threshold",
@@ -169,22 +195,35 @@ def parse_args() -> argparse.Namespace:
         help="Presidio confidence threshold.",
     )
     parser.add_argument(
-        "--use-gemma-ner",
+        "--use-qwen-ner",
         action="store_true",
         default=True,
-        help="Use Gemma 2 2B for PII NER (default: True).",
+        help="Use Qwen (Ollama) for PII NER (default: True).",
     )
     parser.add_argument(
-        "--no-gemma-ner",
+        "--no-qwen-ner",
         action="store_false",
-        dest="use_gemma_ner",
-        help="Disable Gemma NER.",
+        dest="use_qwen_ner",
+        help="Disable Qwen NER (Ollama).",
     )
     parser.add_argument(
-        "--gemma-ner-threshold",
+        "--qwen-ner-threshold",
         type=float,
         default=0.5,
-        help="Gemma NER confidence threshold (default: 0.5).",
+        help="Qwen NER confidence threshold (default: 0.5).",
+    )
+    parser.add_argument(
+        "--min-ner-agreement",
+        type=int,
+        default=1,
+        choices=[1, 2, 3],
+        help="Minimum number of NER detectors (Presidio, GLiNER, Qwen) that must agree on a PII to keep it. 1=keep if any detector finds it (default), 2=at least two agree, 3=all must agree.",
+    )
+    parser.add_argument(
+        "--min-agreement-names",
+        type=int,
+        default=1,
+        help="For person/name entities only: keep if at least this many detectors agree (default: 1, so names found by one detector are still anonymised).",
     )
     parser.add_argument(
         "--qwen-python",
@@ -195,8 +234,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--qwen-script",
         type=Path,
-        default=Path(__file__).resolve().parent / "run_qwen_anonymize.py",
-        help="Path to Qwen script for generating anonymized values (default: run_qwen_anonymize.py). Use run_qwen_stub.py for hardcoded fallback.",
+        default=Path(__file__).resolve().parent / "run_qwen_ollama.py",
+        help="Script for anonymized values (default: run_qwen_ollama.py, Qwen 3.5 via Ollama). Use run_qwen_anonymize.py for HF Qwen2.5-1.5B, run_qwen_stub.py for stub.",
     )
     parser.add_argument(
         "--output-dir",
@@ -204,7 +243,43 @@ def parse_args() -> argparse.Namespace:
         default=Path("PII-Anonymisation/output"),
         help="Output directory.",
     )
+    parser.add_argument(
+        "--report-dir",
+        type=Path,
+        default=Path(__file__).resolve().parent / "db" / "reports",
+        help="Directory to write report JSON (used by UI). Default: ./db/reports",
+    )
+    parser.add_argument(
+        "--no-report",
+        action="store_true",
+        help="Do not write report JSON or update config (faster).",
+    )
+    parser.add_argument(
+        "--progress-file",
+        type=Path,
+        default=None,
+        help="Write live progress JSON here (stage, file, chunk, counts; no content). Used by UI.",
+    )
+    parser.add_argument(
+        "--files",
+        type=str,
+        default=None,
+        help="Comma-separated filenames to process (only these; must exist in input-dir). Default: use num-files.",
+    )
     return parser.parse_args()
+
+
+def _report_progress(progress_file: Path | None, **kwargs: Any) -> None:
+    """Write progress dict to file (no PII/content). Atomic write."""
+    if not progress_file:
+        return
+    try:
+        payload = {"running": True, **kwargs}
+        tmp = progress_file.with_suffix(progress_file.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=True), encoding="utf-8")
+        tmp.replace(progress_file)
+    except Exception as e:
+        logger.debug("Progress write failed: %s", e)
 
 
 def extract_text(file_path: Path) -> str:
@@ -271,6 +346,8 @@ def detect_pii_with_gliner(
     text: str,
     threshold: float,
 ) -> list[PiiDetection]:
+    # GLiNER (default: urchade/gliner_large-v2.1): zero-shot NER; lower threshold = higher recall, more false positives.
+    # With many labels at once, scores for e.g. "person" can be conservative; default 0.35 helps catch names.
     predictions = model.predict_entities(text, GLINER_PII_LABELS, threshold=threshold)
     dedup: dict[tuple[str, str], PiiDetection] = {}
     for pred in predictions:
@@ -481,6 +558,28 @@ def detect_pii_with_presidio(text: str, threshold: float) -> list[PiiDetection]:
     return sorted(dedup.values(), key=lambda x: (-len(x.text), x.text.lower()))
 
 
+def _label_agreement(l1: str, l2: str) -> bool:
+    """True if two labels are considered the same for ensemble agreement (e.g. person/name)."""
+    a, b = l1.lower().strip(), l2.lower().strip()
+    if a == b:
+        return True
+    if a in ("person", "name") and b in ("person", "name"):
+        return True
+    if "organization" in a and "organization" in b:
+        return True
+    if "address" in a and "address" in b:
+        return True
+    return False
+
+
+def _group_contains_detection(group: list[PiiDetection], text: str, label: str) -> bool:
+    t = text.lower()
+    for p in group:
+        if p.text.lower() == t and _label_agreement(p.label, label):
+            return True
+    return False
+
+
 def merge_pii_detections(
     detection_groups: list[list[PiiDetection]],
 ) -> list[PiiDetection]:
@@ -492,6 +591,36 @@ def merge_pii_detections(
             if existing is None or item.score > existing.score:
                 merged[key] = item
     return sorted(merged.values(), key=lambda x: (-len(x.text), x.text.lower()))
+
+
+def _is_person_name_label(label: str) -> bool:
+    """True if label is person/name for relaxed agreement."""
+    L = label.lower().strip()
+    return L in ("person", "name")
+
+
+def pii_ensemble_agreement(
+    detection_groups: list[list[PiiDetection]],
+    min_agreement: int,
+    min_agreement_for_names: int = 1,
+) -> list[PiiDetection]:
+    """
+    Keep only PIIs that at least min_agreement detectors found (ensemble agreement).
+    For person/name entities, use min_agreement_for_names (default 1) so names
+    found by only one detector are still anonymised.
+    """
+    union = merge_pii_detections(detection_groups)
+    if min_agreement <= 1 and min_agreement_for_names <= 1:
+        return union
+    agreed: list[PiiDetection] = []
+    for p in union:
+        count = sum(
+            1 for group in detection_groups if _group_contains_detection(group, p.text, p.label)
+        )
+        required = min_agreement_for_names if _is_person_name_label(p.label) else min_agreement
+        if count >= required:
+            agreed.append(p)
+    return sorted(agreed, key=lambda x: (-len(x.text), x.text.lower()))
 
 
 def call_qwen_json(
@@ -552,21 +681,29 @@ def parse_json_like(text: str) -> dict[str, Any]:
 
 def build_qwen_replacement_prompt(chunk: str, detected_pii: list[PiiDetection]) -> tuple[str, str]:
     system = (
-        "You are a strict PII anonymization assistant. "
-        "Return JSON only with schema: "
+        "You are a PII anonymization assistant. Return JSON only: "
         "{\"replacements\":[{\"original_value\":\"...\",\"anonymized_value\":\"...\",\"pii_type\":\"...\"}]}. "
-        "Replacement must preserve datatype (name->synthetic name, email->synthetic email, phone->synthetic phone, etc)."
+        "Rules: "
+        "(1) **Same language and region**: Names, addresses, organisations must match the original language/region "
+        "(e.g. Swedish name→Swedish name, French→French, Chinese→Chinese, German→German). Do not use English names for non-English originals. "
+        "(2) **Same type**: name→name, date→date, phone→phone, email→email, organisation→organisation, etc. "
+        "(3) **Structurally and contextually similar**: "
+        "Dates: preserve the exact format (DD/MM/YYYY vs MM/DD/YYYY vs YYYY-MM-DD, month names, separators). Same era/century if obvious. "
+        "Phones: preserve country code pattern and separators (e.g. +46..., 0xx..., (0xx) ...). "
+        "IDs/numbers: preserve length and separator pattern (e.g. SSN dashes, card spaces). "
+        "Addresses: same country/region style (street format, postal pattern). "
+        "Output only the JSON object."
     )
     detected_payload = [
         {"value": item.text, "pii_type": item.label, "confidence": round(item.score, 4)}
         for item in detected_pii
     ]
     user = (
-        "PII detected using union of Presidio, GLiNER, and Gemma NER:\n"
-        f"{json.dumps(detected_payload, ensure_ascii=True)}\n\n"
+        "PII detected (Presidio + GLiNER + Qwen):\n"
+        f"{json.dumps(detected_payload, ensure_ascii=False)}\n\n"
         "Text chunk:\n"
         f"{chunk}\n\n"
-        "Generate anonymization replacements in JSON only."
+        "Generate one replacement per PII. Same language, region, type, and structure (date format, phone format, etc.). JSON only."
     )
     return system, user
 
@@ -575,13 +712,82 @@ def normalize_label(label: str) -> str:
     return re.sub(r"\s+", "_", label.strip().lower())
 
 
+def partial_mask(text: str, visible_ratio: float = 0.3) -> str:
+    """Mask text with #, leaving approximately `visible_ratio` of characters visible (at start and end)."""
+    if not text or not text.strip():
+        return "#####"
+    s = text.strip()
+    n = len(s)
+    if n <= 2:
+        return "#" * n
+    keep_each = max(1, round(n * (visible_ratio / 2)))
+    if keep_each * 2 >= n:
+        keep_each = max(1, n // 3)
+    mid = n - 2 * keep_each
+    return s[:keep_each] + ("#" * mid) + s[-keep_each:]
+
+
+def _infer_date_format(original: str) -> str:
+    """Infer date format from original string: ddmmyyyy, mmddyyyy, yyyymmdd, or default mmddyyyy."""
+    s = original.strip()
+    # YYYY-MM-DD or YYYY/MM/DD
+    if re.search(r"\b(19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}\b", s):
+        return "yyyymmdd"
+    # DD/MM/YYYY or DD-MM-YYYY (day typically > 12 when ambiguous)
+    if re.search(r"\b\d{1,2}[-/]\d{1,2}[-/](19|20)\d{2}\b", s):
+        return "ddmmyyyy"
+    # MM/DD/YYYY (US)
+    if re.search(r"\b\d{1,2}[-/]\d{1,2}[-/](19|20)?\d{2}\b", s):
+        return "mmddyyyy"
+    # Month name (e.g. 15 March 2025, March 15, 2025)
+    if re.search(r"[A-Za-z]+\s+\d{1,2},?\s+(19|20)\d{2}", s) or re.search(r"\d{1,2}\s+[A-Za-z]+\s+(19|20)\d{2}", s):
+        return "mmddyyyy"  # arbitrary; hard to distinguish without locale
+    return "mmddyyyy"
+
+
+def _infer_phone_prefix(original: str) -> str:
+    """Infer country/region prefix from original (e.g. +46, +1, 0). Return prefix for synthetic."""
+    digits = re.sub(r"\D", "", original)
+    s = original.strip()
+    if s.startswith("0") and len(digits) >= 9:
+        return "0"
+    if s.startswith("+") and len(digits) >= 10:
+        # Common country codes: 1, 33, 44, 46, 49, etc.
+        if digits.startswith("1") and len(digits) >= 10:
+            return "+1"
+        if digits.startswith("44"):
+            return "+44"
+        if digits.startswith("46"):
+            return "+46"
+        if digits.startswith("33"):
+            return "+33"
+        if digits.startswith("49"):
+            return "+49"
+        if len(digits) >= 10:
+            return "+" + digits[: min(3, 1 + (1 if digits[0] == "1" else 2))]
+    return "+1"
+
+
 def synthetic_value_for_type(pii_type: str, original: str) -> str:
+    t = pii_type.lower()
+    if "suspicious_token" in t:
+        return partial_mask(original, visible_ratio=0.3)
     seed = abs(hash((pii_type.lower(), original))) % 1_000_000
     rng = random.Random(seed)
-    t = pii_type.lower()
     if "email" in t:
         return f"user{seed % 100000}@example.com"
     if "phone" in t:
+        prefix = _infer_phone_prefix(original)
+        if prefix == "0":
+            return f"0{rng.randint(70, 79)}{rng.randint(1000000, 9999999)}"
+        if prefix.startswith("+46"):
+            return f"+46{rng.randint(70, 79)}{rng.randint(100000, 999999)}"
+        if prefix.startswith("+44"):
+            return f"+44{rng.randint(7700, 7799)}{rng.randint(100000, 999999)}"
+        if prefix.startswith("+33"):
+            return f"+33{rng.randint(1, 9)}{rng.randint(10000000, 99999999)}"
+        if prefix.startswith("+49"):
+            return f"+49{rng.randint(150, 179)}{rng.randint(1000000, 9999999)}"
         return f"+1-555-{rng.randint(100, 999)}-{rng.randint(1000, 9999)}"
     if "name" in t or "person" in t:
         first = ["Alex", "Jordan", "Taylor", "Casey", "Morgan", "Avery"][seed % 6]
@@ -602,7 +808,15 @@ def synthetic_value_for_type(pii_type: str, original: str) -> str:
     if "ip" in t:
         return f"10.{rng.randint(0, 255)}.{rng.randint(0, 255)}.{rng.randint(1, 254)}"
     if "date" in t:
-        return f"{rng.randint(1, 12):02d}/{rng.randint(1, 28):02d}/19{rng.randint(70, 99)}"
+        fmt = _infer_date_format(original)
+        y = rng.randint(1970, 1999)
+        m = rng.randint(1, 12)
+        d = rng.randint(1, 28)
+        if fmt == "yyyymmdd":
+            return f"{y}-{m:02d}-{d:02d}"
+        if fmt == "ddmmyyyy":
+            return f"{d:02d}/{m:02d}/{y}"
+        return f"{m:02d}/{d:02d}/{y}"
     if "username" in t:
         return f"user_{seed % 100000}"
     return f"<{normalize_label(pii_type)}_{seed % 100000}>"
@@ -610,6 +824,8 @@ def synthetic_value_for_type(pii_type: str, original: str) -> str:
 
 def datatype_match(value: str, pii_type: str) -> bool:
     t = pii_type.lower()
+    if "suspicious_token" in t:
+        return False
     if "email" in t:
         return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value))
     if "phone" in t:
@@ -619,7 +835,7 @@ def datatype_match(value: str, pii_type: str) -> bool:
     if "ip" in t:
         return bool(re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", value))
     if "name" in t or "person" in t:
-        return bool(re.fullmatch(r"[A-Za-z]+(?:[ \-'][A-Za-z]+)+", value.strip()))
+        return any(c.isalpha() for c in value) and len(value.strip()) >= 2
     if "credit" in t and "card" in t:
         digits = re.sub(r"\D", "", value)
         return 13 <= len(digits) <= 19
@@ -648,45 +864,141 @@ def apply_replacements(chunk: str, replacements: list[dict[str, str]]) -> str:
     return updated
 
 
+def _chunk_report(
+    chunk_index: int,
+    original: str,
+    anonymized: str,
+    presidio_pii: list[PiiDetection],
+    gliner_pii: list[PiiDetection],
+    qwen_pii: list[PiiDetection],
+    combined_pii: list[PiiDetection],
+    replacements: list[dict[str, str]],
+    dropped_findings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build a serializable report dict for one chunk (for UI/report JSON)."""
+    def _pii_list(items: list[PiiDetection]) -> list[dict]:
+        return [{"value": p.text, "pii_type": p.label, "score": round(p.score, 4)} for p in items]
+
+    presidio_set = {(p.text.lower(), p.label.lower()) for p in presidio_pii}
+    gliner_set = {(p.text.lower(), p.label.lower()) for p in gliner_pii}
+    qwen_set = {(p.text.lower(), p.label.lower()) for p in qwen_pii}
+
+    findings_with_source: list[dict] = []
+    for p in combined_pii:
+        key = (p.text.lower(), p.label.lower())
+        found_by: list[str] = []
+        if key in presidio_set:
+            found_by.append("presidio")
+        if key in gliner_set:
+            found_by.append("gliner")
+        if key in qwen_set:
+            found_by.append("qwen")
+        if not found_by:
+            found_by.append("audit")
+        findings_with_source.append({
+            "value": p.text,
+            "pii_type": p.label,
+            "score": round(p.score, 4),
+            "found_by": found_by,
+        })
+
+    return {
+        "chunk_index": chunk_index,
+        "original": original,
+        "anonymized": anonymized,
+        "presidio": _pii_list(presidio_pii),
+        "gliner": _pii_list(gliner_pii),
+        "qwen": _pii_list(qwen_pii),
+        "findings": findings_with_source,
+        "replacements": list(replacements),
+        "dropped_findings": list(dropped_findings) if dropped_findings else [],
+    }
+
+
 def process_chunk(
     chunk: str,
     chunk_index: int,
     gliner_model: GLiNER,
     gliner_threshold: float,
     presidio_threshold: float,
-    use_gemma_ner: bool,
-    gemma_ner_threshold: float,
+    use_qwen_ner: bool,
+    qwen_ner_threshold: float,
+    min_ner_agreement: int,
+    min_agreement_for_names: int,
     qwen_python: str,
     qwen_script: Path,
-) -> tuple[str, bool]:
+    progress_file: Path | None = None,
+    file_name: str = "",
+    total_chunks: int = 1,
+) -> tuple[str, bool, dict[str, Any]]:
     logger.info("chunk number : %s", chunk_index)
+    _report_progress(progress_file, stage="presidio", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, chunk_size=len(chunk))
     presidio_pii = detect_pii_with_presidio(chunk, threshold=presidio_threshold)
+    _report_progress(progress_file, stage="presidio", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, presidio_count=len(presidio_pii))
     gliner_pii = detect_pii_with_gliner(gliner_model, chunk, threshold=gliner_threshold)
-    gemma_pii: list[PiiDetection] = []
-    if use_gemma_ner and _gemma_ner_detect is not None:
+    _report_progress(progress_file, stage="gliner", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, gliner_count=len(gliner_pii))
+    qwen_pii: list[PiiDetection] = []
+    if use_qwen_ner and _qwen_ner_detect is not None:
+        _report_progress(progress_file, stage="qwen_ner", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks)
         try:
-            gemma_raw = _gemma_ner_detect(chunk, threshold=gemma_ner_threshold)
-            gemma_pii = [
+            qwen_raw = _qwen_ner_detect(chunk, threshold=qwen_ner_threshold)
+            qwen_pii = [
                 PiiDetection(text=x["text"], label=x["label"], score=float(x.get("score", 0.8)))
-                for x in gemma_raw
+                for x in qwen_raw
                 if isinstance(x, dict) and x.get("text") and x.get("label")
             ]
         except Exception as exc:  # pragma: no cover
-            logger.warning("Gemma NER failed for chunk: %s", exc)
-    combined_pii = merge_pii_detections(
-        [presidio_pii, gliner_pii, gemma_pii],
+            logger.warning("Qwen NER (Ollama) failed for chunk: %s", exc)
+    _report_progress(progress_file, stage="qwen_ner", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, qwen_count=len(qwen_pii))
+    combined_pii = pii_ensemble_agreement(
+        [presidio_pii, gliner_pii, qwen_pii],
+        min_agreement=min_ner_agreement,
+        min_agreement_for_names=min_agreement_for_names,
     )
+    # Build dropped_findings (found by at least one detector but not enough agreement) for diagnostics
+    union = merge_pii_detections([presidio_pii, gliner_pii, qwen_pii])
+    agreed_set = {(p.text.lower(), p.label.lower()) for p in combined_pii}
+    dropped_findings: list[dict[str, Any]] = []
+    for p in union:
+        key = (p.text.lower(), p.label.lower())
+        if key in agreed_set:
+            continue
+        found_by: list[str] = []
+        if _group_contains_detection([presidio_pii], p.text, p.label):
+            found_by.append("presidio")
+        if _group_contains_detection([gliner_pii], p.text, p.label):
+            found_by.append("gliner")
+        if _group_contains_detection([qwen_pii], p.text, p.label):
+            found_by.append("qwen")
+        dropped_findings.append({
+            "value": p.text,
+            "pii_type": p.label,
+            "score": round(p.score, 4),
+            "found_by": found_by,
+            "reason": "agreement < required (kept only when at least {} detector(s) agree)".format(
+                min_agreement_for_names if _is_person_name_label(p.label) else min_ner_agreement,
+            ),
+        })
+    if dropped_findings:
+        logger.info(
+            "PII dropped (agreement): %s",
+            json.dumps([{"value": d["value"], "pii_type": d["pii_type"], "found_by": d["found_by"]} for d in dropped_findings], ensure_ascii=True),
+        )
     audit_hits = regex_entropy_audit(chunk)
     detected_values = {d.text for d in combined_pii}
     for hit in audit_hits:
         if hit not in detected_values:
             combined_pii.append(PiiDetection(text=hit, label="suspicious_token", score=1.0))
     combined_pii = _dedup_detections(combined_pii)
+    _report_progress(progress_file, stage="agreement", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, agreed_count=len(combined_pii))
 
     if not combined_pii:
         logger.info("no pii in the chunk")
-        return chunk, True
+        _report_progress(progress_file, stage="chunk_done", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, replacements_count=0)
+        report = _chunk_report(chunk_index, chunk, chunk, [], [], [], [], [], dropped_findings=dropped_findings)
+        return chunk, True, report
 
+    _report_progress(progress_file, stage="anonymisation", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks)
     logger.info(
         "Piis found in the chunk by presidio : %s",
         json.dumps([{"value": p.text, "pii_type": p.label} for p in presidio_pii], ensure_ascii=True),
@@ -696,11 +1008,12 @@ def process_chunk(
         json.dumps([{"value": p.text, "pii_type": p.label} for p in gliner_pii], ensure_ascii=True),
     )
     logger.info(
-        "Piis found in the chunk by gemma : %s",
-        json.dumps([{"value": p.text, "pii_type": p.label} for p in gemma_pii], ensure_ascii=True),
+        "Piis found in the chunk by qwen : %s",
+        json.dumps([{"value": p.text, "pii_type": p.label} for p in qwen_pii], ensure_ascii=True),
     )
     logger.info(
-        "Piis found in the chunk by union : %s",
+        "Piis found in the chunk (min_agreement=%s) : %s",
+        min_ner_agreement,
         json.dumps([{"value": p.text, "pii_type": p.label} for p in combined_pii], ensure_ascii=True),
     )
     r_system, r_user = build_qwen_replacement_prompt(chunk, combined_pii)
@@ -717,7 +1030,9 @@ def process_chunk(
             continue
         if original not in chunk:
             continue
-        if not datatype_match(anonymized, pii_type):
+        if "suspicious_token" in pii_type.lower():
+            anonymized = partial_mask(original, visible_ratio=0.3)
+        elif not datatype_match(anonymized, pii_type):
             anonymized = synthetic_value_for_type(pii_type, original)
         key = (original.lower(), pii_type.lower())
         if key in seen_values:
@@ -747,41 +1062,58 @@ def process_chunk(
     logger.info("original and anonymized value in the chunk : %s", json.dumps(normalized, ensure_ascii=True))
     replaced_chunk = apply_replacements(chunk, normalized)
     logger.info("replacement done")
-    return replaced_chunk, bool(normalized)
+    _report_progress(progress_file, stage="chunk_done", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, replacements_count=len(normalized))
+    report = _chunk_report(
+        chunk_index, chunk, replaced_chunk,
+        presidio_pii, gliner_pii, qwen_pii, combined_pii, normalized,
+        dropped_findings=dropped_findings,
+    )
+    return replaced_chunk, bool(normalized), report
 
 
 def process_file(
     file_path: Path,
     gliner_model: GLiNER,
     args: argparse.Namespace,
-) -> tuple[str, int, int]:
+) -> tuple[str, int, int, list[dict[str, Any]]]:
     logger.info("Processing file name start : %s", file_path.name)
+    progress_file = getattr(args, "progress_file", None)
+    _report_progress(progress_file, stage="extract", file=file_path.name)
     text = extract_text(file_path)
     chunks = chunk_text(text, chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap)
+    _report_progress(progress_file, stage="chunking", file=file_path.name, total_chunks=len(chunks))
 
     anonymized_chunks: list[str] = []
     anonymized_count = 0
     not_anonymized_count = 0
-    for index, chunk in enumerate(chunks, start=1):
-        anonymized_chunk, success = process_chunk(
+    chunk_reports: list[dict[str, Any]] = []
+    # Process only the first chunk (limit of 1 chunk)
+    if chunks:
+        index, chunk = 1, chunks[0]
+        anonymized_chunk, success, report = process_chunk(
             chunk=chunk,
             chunk_index=index,
             gliner_model=gliner_model,
             gliner_threshold=args.gliner_threshold,
             presidio_threshold=args.presidio_threshold,
-            use_gemma_ner=args.use_gemma_ner,
-            gemma_ner_threshold=args.gemma_ner_threshold,
+            use_qwen_ner=args.use_qwen_ner,
+            qwen_ner_threshold=args.qwen_ner_threshold,
+            min_ner_agreement=args.min_ner_agreement,
+            min_agreement_for_names=getattr(args, "min_agreement_names", 1),
             qwen_python=args.qwen_python,
             qwen_script=args.qwen_script,
+            progress_file=progress_file,
+            file_name=file_path.name,
+            total_chunks=len(chunks),
         )
         anonymized_chunks.append(anonymized_chunk)
+        chunk_reports.append(report)
         if success:
             anonymized_count += 1
         else:
             not_anonymized_count += 1
-
     logger.info("Processing file name end : %s", file_path.name)
-    return "\n".join(anonymized_chunks), anonymized_count, not_anonymized_count
+    return "\n".join(anonymized_chunks), anonymized_count, not_anonymized_count, chunk_reports
 
 
 def main() -> None:
@@ -794,8 +1126,8 @@ def main() -> None:
             "Presidio: not available. To enable: pip install presidio-analyzer spacy && python -m spacy download en_core_web_sm",
         )
     logger.info(
-        "Gemma NER: %s",
-        "enabled" if (args.use_gemma_ner and _gemma_ner_detect is not None) else "disabled or unavailable",
+        "Qwen NER (Ollama): %s",
+        "enabled" if (args.use_qwen_ner and _qwen_ner_detect is not None) else "disabled or unavailable",
     )
     args.input_dir = args.input_dir.resolve()
     args.output_dir = args.output_dir.resolve()
@@ -815,17 +1147,31 @@ def main() -> None:
         ],
         key=lambda p: p.name.lower(),
     )
-    selected_files = candidates[: args.num_files]
+    if getattr(args, "files", None) and args.files.strip():
+        want = {s.strip() for s in args.files.split(",") if s.strip()}
+        selected_files = [p for p in candidates if p.name in want]
+        missing = want - {p.name for p in selected_files}
+        if missing:
+            logger.warning("Requested files not found in input-dir: %s", missing)
+    else:
+        selected_files = candidates[: args.num_files]
     if not selected_files:
         raise RuntimeError(f"No supported files found in {args.input_dir}")
 
     logger.info("Loading GLiNER model: %s", args.gliner_model)
     gliner_model = GLiNER.from_pretrained(args.gliner_model)
 
+    script_dir = Path(__file__).resolve().parent
+    config_file = script_dir / "config.json"
+    report_dir = args.report_dir.resolve()
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    _report_progress(args.progress_file, stage="starting", total_files=len(selected_files))
     total_anonymized = 0
     total_not_anonymized = 0
+    file_reports: list[dict[str, Any]] = []
     for file_path in selected_files:
-        anonymized_text, anonymized_count, not_anonymized_count = process_file(
+        anonymized_text, anonymized_count, not_anonymized_count, chunk_reports = process_file(
             file_path=file_path,
             gliner_model=gliner_model,
             args=args,
@@ -835,8 +1181,86 @@ def main() -> None:
         out_file = args.output_dir / f"{file_path.name}.anonymized.txt"
         out_file.write_text(anonymized_text, encoding="utf-8")
 
+        original_text = extract_text(file_path)
+        all_findings: list[dict] = []
+        all_replacements: list[dict] = []
+        all_dropped_findings: list[dict] = []
+        for cr in chunk_reports:
+            all_findings.extend(cr.get("findings", []))
+            all_replacements.extend(cr.get("replacements", []))
+            all_dropped_findings.extend(cr.get("dropped_findings", []))
+        file_reports.append({
+            "file_name": file_path.name,
+            "original_text": original_text,
+            "anonymized_text": anonymized_text,
+            "chunks": chunk_reports,
+            "all_findings": all_findings,
+            "all_replacements": all_replacements,
+            "all_dropped_findings": all_dropped_findings,
+            "chunks_anonymized": anonymized_count,
+            "chunks_not_anonymized": not_anonymized_count,
+        })
+
     logger.info("number of times all pii anonymized : %s", total_anonymized)
     logger.info("number of times it was not : %s", total_not_anonymized)
+
+    if not args.no_report and file_reports:
+        created_at = datetime.now().isoformat()
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        report_filename = f"{timestamp}_report.json"
+        report_path = report_dir / report_filename
+        report_payload = {
+            "created_at": created_at,
+            "source_files": [r["file_name"] for r in file_reports],
+            "total_chunks_anonymized": total_anonymized,
+            "total_chunks_not_anonymized": total_not_anonymized,
+            "files": file_reports,
+        }
+        report_path.write_text(json.dumps(report_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("Report written: %s", report_path)
+        try:
+            rel_report = report_path.relative_to(script_dir)
+        except ValueError:
+            rel_report = report_path
+        config_data = {"latest_report": str(rel_report), "updated_at": created_at}
+        config_file.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
+        logger.info("Config updated: %s (latest_report=%s)", config_file, rel_report)
+        run_id = timestamp
+        runs_dir = script_dir / "db" / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        run_dir = runs_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        run_meta = {
+            "run_id": run_id,
+            "created_at": created_at,
+            "report_path": str(rel_report),
+            "total_chunks_anonymized": total_anonymized,
+            "total_chunks_not_anonymized": total_not_anonymized,
+            "files": [
+                {
+                    "file_name": r["file_name"],
+                    "entity_count": len(r.get("all_findings", [])),
+                    "entity_types": sorted(set(t for t in (f.get("pii_type", "") for f in r.get("all_findings", [])) if t)),
+                    "chunks_processed": len(r.get("chunks", [])),
+                    "chunk_logs": [
+                        {
+                            "chunk_index": c.get("chunk_index"),
+                            "chunk_size": len(c.get("original", "")),
+                            "presidio_count": len(c.get("presidio", [])),
+                            "gliner_count": len(c.get("gliner", [])),
+                            "qwen_count": len(c.get("qwen", [])),
+                            "agreed_count": len(c.get("findings", [])),
+                            "replacements_count": len(c.get("replacements", [])),
+                        }
+                        for c in r.get("chunks", [])
+                    ],
+                }
+                for r in file_reports
+            ],
+        }
+        (run_dir / "run_meta.json").write_text(json.dumps(run_meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        shutil.copy(report_path, run_dir / "report.json")
+        logger.info("Run meta written: %s", run_dir / "run_meta.json")
 
 
 if __name__ == "__main__":

@@ -1,15 +1,22 @@
 """
-Gemma 2 2B for PII NER: loads google/gemma-2-2b-it and extracts PII entities from text.
+Qwen (Ollama) for PII NER: calls Ollama chat API with Qwen 3.5 / 9B to extract PII from text.
 Returns list of PiiDetection-compatible dicts (text, label, score).
+Model name from env OLLAMA_NER_MODEL (default: qwen3.5). Use the tag from `ollama list` for 9B (e.g. qwen2.5:9b).
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
-from typing import Any
+import urllib.request
+import urllib.error
 
 logger = logging.getLogger(__name__)
+
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+OLLAMA_NER_MODEL = os.environ.get("OLLAMA_NER_MODEL", "qwen3.5:9b")
+MAX_INPUT_CHARS = 2000
 
 PII_LABELS = [
     "person", "name", "email", "phone number", "address", "organization",
@@ -17,7 +24,7 @@ PII_LABELS = [
     "ip address", "username", "location",
 ]
 
-GEMMA_NER_SYSTEM = (
+QWEN_NER_SYSTEM = (
     "You are a PII extraction tool. Reply with ONLY a JSON array: no other text, no markdown. "
     "Each item: {\"text\": \"exact span from text\", \"label\": \"type\"}. "
     "Labels: person, name, email, phone number, address, organization, location, date, ssn, passport number, "
@@ -25,42 +32,8 @@ GEMMA_NER_SYSTEM = (
     "If no PII, reply with exactly: []"
 )
 
-_MODEL: Any = None
-_TOKENIZER: Any = None
-_DEVICE: str = "cpu"
-_INIT_FAILED = False
-MODEL_ID = "google/gemma-2-2b-it"
-MAX_NEW_TOKENS = 2048
-MAX_INPUT_CHARS = 2000
-
-
-def _load_model() -> bool:
-    global _MODEL, _TOKENIZER, _DEVICE, _INIT_FAILED
-    if _INIT_FAILED:
-        return False
-    if _MODEL is not None:
-        return True
-    try:
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-        _DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-        _TOKENIZER = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
-        _MODEL = AutoModelForCausalLM.from_pretrained(
-            MODEL_ID,
-            device_map="auto" if _DEVICE == "cuda" else None,
-            trust_remote_code=True,
-        )
-        if _DEVICE == "cpu":
-            _MODEL = _MODEL.to(_DEVICE)
-        return True
-    except Exception as e:
-        _INIT_FAILED = True
-        logger.warning("Gemma NER model load failed: %s", e, exc_info=False)
-        raise RuntimeError(f"Gemma NER model load failed: {e}") from e
-
 
 def _strip_markdown_json(reply: str) -> str:
-    """Strip ```json ... ``` or ``` ... ``` so we can parse the inner array."""
     reply = reply.strip()
     m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", reply, re.IGNORECASE)
     if m:
@@ -69,7 +42,6 @@ def _strip_markdown_json(reply: str) -> str:
 
 
 def _extract_array_slice(reply: str, start: int) -> tuple[list, int, int] | None:
-    """Find balanced [...] starting at start. Returns (parsed_list, start, end) or None."""
     if start < 0 or start >= len(reply) or reply[start] != "[":
         return None
     depth = 0
@@ -93,7 +65,6 @@ def _extract_array_slice(reply: str, start: int) -> tuple[list, int, int] | None
 
 
 def _parse_entities(reply: str) -> list[dict]:
-    """Extract JSON array from model reply. Handles markdown, multiple arrays (takes longest)."""
     reply = reply.strip()
     reply = _strip_markdown_json(reply)
     candidates: list[tuple[list, int, int]] = []
@@ -110,54 +81,63 @@ def _parse_entities(reply: str) -> list[dict]:
         start = idx + 1
     if not candidates:
         return []
-    # Prefer the longest list (most entities); if tie, prefer last (often the actual answer)
     best = max(candidates, key=lambda c: (len(c[0]), c[2]))
     return best[0]
 
 
-def detect_pii_with_gemma(text: str, threshold: float = 0.5) -> list[dict]:
-    """
-    Run Gemma 2 2B to extract PII from text. Returns list of {"text": str, "label": str, "score": float}.
-    If model fails to load or run, returns [].
-    """
-    global _MODEL, _TOKENIZER, _DEVICE
+def _ollama_chat(model: str, system: str, user: str) -> str:
+    url = f"{OLLAMA_HOST.rstrip('/')}/api/chat"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "stream": False,
+        "options": {"num_predict": 2048},
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
-        if not _load_model():
-            return []
-    except Exception as e:
-        logger.warning("Gemma NER load failed: %s", e)
-        return []
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            out = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+        raise RuntimeError(f"Ollama HTTP {e.code}: {body}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Ollama not reachable at {OLLAMA_HOST}: {e.reason}") from e
+    msg = out.get("message") or {}
+    return msg.get("content", "")
+
+
+def detect_pii_with_qwen_ollama(text: str, threshold: float = 0.5) -> list[dict]:
+    """
+    Run Qwen via Ollama to extract PII from text. Returns list of {"text": str, "label": str, "score": float}.
+    If Ollama fails or reply is not parseable, returns [].
+    """
     if not text or not text.strip():
         return []
     chunk = text[:MAX_INPUT_CHARS] if len(text) > MAX_INPUT_CHARS else text
     user_msg = (
-        GEMMA_NER_SYSTEM
+        QWEN_NER_SYSTEM
         + "\n\nText to analyze:\n"
         + chunk
         + "\n\nReply with only the JSON array (start with [):"
     )
-    messages = [{"role": "user", "content": user_msg}]
     try:
-        prompt = _TOKENIZER.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        inputs = _TOKENIZER(prompt, return_tensors="pt", truncation=True, max_length=4096).to(_DEVICE)
-        outputs = _MODEL.generate(
-            **inputs,
-            max_new_tokens=MAX_NEW_TOKENS,
-            do_sample=False,
-            pad_token_id=_TOKENIZER.eos_token_id,
-        )
-        reply = _TOKENIZER.decode(outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
+        reply = _ollama_chat(OLLAMA_NER_MODEL, QWEN_NER_SYSTEM, user_msg)
     except Exception as e:
-        logger.warning("Gemma NER inference failed: %s", e)
+        logger.warning("Qwen NER (Ollama) failed: %s", e)
         return []
     entities = _parse_entities(reply)
     if not entities:
         logger.info(
-            "Gemma NER returned no parseable entities. Raw reply (first 700 chars): %s",
+            "Qwen NER (Ollama) returned no parseable entities. Raw reply (first 700 chars): %s",
             (reply[:700] if reply else "(empty)"),
         )
     result = []

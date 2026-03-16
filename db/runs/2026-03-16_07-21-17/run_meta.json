@@ -1,0 +1,33 @@
+{
+  "run_id": "2026-03-16_07-21-17",
+  "created_at": "2026-03-16T07:21:17.180354",
+  "report_path": "db/reports/2026-03-16_07-21-17_report.json",
+  "total_chunks_anonymized": 1,
+  "total_chunks_not_anonymized": 0,
+  "files": [
+    {
+      "file_name": "PHI_30_en_Government.pdf",
+      "entity_count": 12,
+      "entity_types": [
+        "date",
+        "date_of_birth",
+        "last_name",
+        "organization",
+        "person",
+        "suspicious_token"
+      ],
+      "chunks_processed": 1,
+      "chunk_logs": [
+        {
+          "chunk_index": 1,
+          "chunk_size": 1600,
+          "presidio_count": 7,
+          "gliner_count": 2,
+          "qwen_count": 0,
+          "agreed_count": 12,
+          "replacements_count": 12
+        }
+      ]
+    }
+  ]
+}
