@@ -71,14 +71,7 @@
               "pii_type": "organization",
               "score": 0.85,
               "found_by": [
-                "presidio"
-              ]
-            },
-            {
-              "value": "Patient Care Coordination Report",
-              "pii_type": "organization",
-              "score": 0.85,
-              "found_by": [
+                "gliner",
                 "presidio"
               ]
             },
@@ -107,14 +100,6 @@
               ]
             },
             {
-              "value": "Metformin 500",
-              "pii_type": "person",
-              "score": 0.85,
-              "found_by": [
-                "presidio"
-              ]
-            },
-            {
               "value": "Coordination",
               "pii_type": "suspicious_token",
               "score": 1.0,
@@ -127,8 +112,8 @@
               "pii_type": "date",
               "score": 0.85,
               "found_by": [
-                "presidio",
-                "gliner"
+                "gliner",
+                "presidio"
               ]
             },
             {
@@ -137,14 +122,6 @@
               "score": 1.0,
               "found_by": [
                 "audit"
-              ]
-            },
-            {
-              "value": "BlueCross",
-              "pii_type": "organization",
-              "score": 0.7847,
-              "found_by": [
-                "gliner"
               ]
             },
             {
@@ -222,14 +199,7 @@
           "pii_type": "organization",
           "score": 0.85,
           "found_by": [
-            "presidio"
-          ]
-        },
-        {
-          "value": "Patient Care Coordination Report",
-          "pii_type": "organization",
-          "score": 0.85,
-          "found_by": [
+            "gliner",
             "presidio"
           ]
         },
@@ -258,14 +228,6 @@
           ]
         },
         {
-          "value": "Metformin 500",
-          "pii_type": "person",
-          "score": 0.85,
-          "found_by": [
-            "presidio"
-          ]
-        },
-        {
           "value": "Coordination",
           "pii_type": "suspicious_token",
           "score": 1.0,
@@ -278,8 +240,8 @@
           "pii_type": "date",
           "score": 0.85,
           "found_by": [
-            "presidio",
-            "gliner"
+            "gliner",
+            "presidio"
           ]
         },
         {
@@ -288,14 +250,6 @@
           "score": 1.0,
           "found_by": [
             "audit"
-          ]
-        },
-        {
-          "value": "BlueCross",
-          "pii_type": "organization",
-          "score": 0.7847,
-          "found_by": [
-            "gliner"
           ]
         },
         {

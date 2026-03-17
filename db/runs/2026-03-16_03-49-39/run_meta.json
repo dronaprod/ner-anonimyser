@@ -7,7 +7,7 @@
   "files": [
     {
       "file_name": "PHI_30_en_Government.pdf",
-      "entity_count": 11,
+      "entity_count": 8,
       "entity_types": [
         "date",
         "organization",
@@ -22,7 +22,7 @@
           "presidio_count": 7,
           "gliner_count": 2,
           "qwen_count": 0,
-          "agreed_count": 11,
+          "agreed_count": 8,
           "replacements_count": 11
         }
       ]

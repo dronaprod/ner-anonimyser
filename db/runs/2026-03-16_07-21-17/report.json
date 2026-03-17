@@ -75,14 +75,6 @@
               ]
             },
             {
-              "value": "Patient Care Coordination Report",
-              "pii_type": "organization",
-              "score": 0.85,
-              "found_by": [
-                "presidio"
-              ]
-            },
-            {
               "value": "Jonathan Reed MRN",
               "pii_type": "person",
               "score": 0.85,
@@ -107,14 +99,6 @@
               ]
             },
             {
-              "value": "Metformin 500",
-              "pii_type": "person",
-              "score": 0.85,
-              "found_by": [
-                "presidio"
-              ]
-            },
-            {
               "value": "Coordination",
               "pii_type": "suspicious_token",
               "score": 1.0,
@@ -127,15 +111,8 @@
               "pii_type": "date",
               "score": 0.85,
               "found_by": [
+                "gliner",
                 "presidio"
-              ]
-            },
-            {
-              "value": "1981-04-12",
-              "pii_type": "date_of_birth",
-              "score": 0.8136,
-              "found_by": [
-                "gliner"
               ]
             },
             {
@@ -238,14 +215,6 @@
           ]
         },
         {
-          "value": "Patient Care Coordination Report",
-          "pii_type": "organization",
-          "score": 0.85,
-          "found_by": [
-            "presidio"
-          ]
-        },
-        {
           "value": "Jonathan Reed MRN",
           "pii_type": "person",
           "score": 0.85,
@@ -270,14 +239,6 @@
           ]
         },
         {
-          "value": "Metformin 500",
-          "pii_type": "person",
-          "score": 0.85,
-          "found_by": [
-            "presidio"
-          ]
-        },
-        {
           "value": "Coordination",
           "pii_type": "suspicious_token",
           "score": 1.0,
@@ -290,15 +251,8 @@
           "pii_type": "date",
           "score": 0.85,
           "found_by": [
+            "gliner",
             "presidio"
-          ]
-        },
-        {
-          "value": "1981-04-12",
-          "pii_type": "date_of_birth",
-          "score": 0.8136,
-          "found_by": [
-            "gliner"
           ]
         },
         {

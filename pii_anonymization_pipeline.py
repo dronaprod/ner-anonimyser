@@ -34,62 +34,105 @@ except Exception:  # pragma: no cover
 
 SUPPORTED_SUFFIXES = {".pdf", ".docx", ".xlsx", ".txt"}
 GLINER_PII_LABELS = [
-     "name",
-    "first_name",
-    "last_name",
 
-    "date_of_birth",
+    # Identity
+    "person",
+    "name",
+    "first name",
+    "last name",
+    "date of birth",
 
-    "ssn",
-    "national_id",
-    "tax_id",
-    "certificate_license_number",
+    # Government IDs
+    "aadhaar number",
+    "pan number",
+    "gst number",
+    "national id",
+    "tax id",
+    "certificate license number",
 
-    "medical_record_number",
-    "health_plan_beneficiary_number",
+    # Healthcare
+    "medical record number",
+    "health plan beneficiary number",
 
-    "email",
-    "phone_number",
+    # Contact
+    "email address",
+    "phone number",
 
-    "street_address",
+    # Address
+    "street address",
     "address",
     "city",
     "state",
     "postcode",
     "country",
 
-    "ipv4",
-    "ipv6",
-    "device_identifier",
-    "unique_identifier",
+    # Network / Device
+    "ipv4 address",
+    "ipv6 address",
+    "device identifier",
+    "unique identifier",
 
-    "employee_id",
-    "customer_id",
+    # Organization IDs
+    "employee id",
+    "customer id",
 
-    "account_number",
-    "bank_routing_number",
+    # Financial
+    "account number",
+    "bank routing number",
 
-    "license_plate",
-    "vehicle_identifier",
+    # Vehicle
+    "license plate number",
+    "vehicle identifier",
 
-    "biometric_identifier"
+    # Biometric
+    "biometric identifier"
 ]
 GLINER_PII_LABELS_SET = set(GLINER_PII_LABELS)
 PRESIDIO_TO_SHARED_LABEL = {
+
+    # Identity
     "PERSON": "person",
-    "EMAIL_ADDRESS": "email",
+
+    # Contact
+    "EMAIL_ADDRESS": "email address",
     "PHONE_NUMBER": "phone number",
-    "LOCATION": "address",
+
+    # Location
+    "LOCATION": "location",
+
+    # Dates
     "DATE_TIME": "date",
+
+    # Government IDs
     "US_SSN": "ssn",
     "US_PASSPORT": "passport number",
+    "US_DRIVER_LICENSE": "driver license number",
+
+    # Indian IDs
+    "IN_AADHAAR": "aadhaar number",
+    "IN_PAN": "pan number",
+    "IN_PASSPORT": "passport number",
+    "IN_VEHICLE_REGISTRATION": "vehicle registration number",
+
+    # Financial
     "CREDIT_CARD": "credit card number",
-    "IP_ADDRESS": "ip address",
     "IBAN_CODE": "bank account number",
     "US_BANK_NUMBER": "bank account number",
-    "US_DRIVER_LICENSE": "username",
-    "URL": "username",
+
+    # Network
+    "IP_ADDRESS": "ip address",
+    "MAC_ADDRESS": "mac address",
+
+    # Internet
+    "URL": "url",
+
+    # Healthcare
+    "MEDICAL_LICENSE": "medical license number",
+
+    # Crypto
+    "CRYPTO": "crypto wallet address",
 }
+
 LONG_NUMBER_PATTERN = re.compile(r"\b\d{6,}\b")
 CARD_LIKE_PATTERN = re.compile(r"\b(?:\d[ -]?){12,20}\b")
 UUID_PATTERN = re.compile(
@@ -106,6 +149,48 @@ HEX_40_PATTERN = re.compile(r"\b[a-fA-F0-9]{40}\b")
 HEX_64_PATTERN = re.compile(r"\b[a-fA-F0-9]{64}\b")
 OBFUSCATED_EMAIL_PATTERN = re.compile(
     r"\b\w+\s*(?:at|\(at\))\s*\w+\s*(?:dot|\.)\s*\w+\b",
+    re.IGNORECASE,
+)
+
+# Indian ID deterministic audit patterns (structure-only; no content logged)
+AADHAAR_PATTERN = re.compile(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}\b")
+PAN_PATTERN = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")
+GST_NUMBER_PATTERN = re.compile(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]\d[A-Z]\d\b")
+UDYAM_PATTERN = re.compile(r"\bUDYAM-[A-Z]{2}-\d{2}-\d{6,7}\b", re.IGNORECASE)
+INDIAN_ID_PATTERNS: list[tuple[Any, str]] = [
+    (AADHAAR_PATTERN, "aadhaar"),
+    (PAN_PATTERN, "pan"),
+    (GST_NUMBER_PATTERN, "gst_number"),
+    (UDYAM_PATTERN, "udyam_number"),
+]
+
+# Section/label phrases that NERs sometimes wrongly tag as PII. Drop these to improve precision.
+PII_LABEL_PHRASES: frozenset[str] = frozenset({
+    "aadhaar number", "pan number", "pan card information name", "sample identity data",
+    "gst information", "gstin", "business name", "father's name", "registration date",
+    "business type", "pan card information", "aadhaar card information",
+    "dob", "d.o.b.", "date of birth", "patient care coordination report",
+    "coordination", "patient care", "care coordination", "coordination report",
+    "metformin 500mg", "metformin 500", "identity data", "for testing purposes only",
+})
+
+# Document/report titles or generic phrases wrongly tagged as organization. Drop when label is organization.
+DOCUMENT_TITLE_ORGANIZATION_PHRASES: frozenset[str] = frozenset({
+    "patient care coordination report", "sample identity data", "identity data (for testing purposes only)",
+    "patient care", "care coordination", "coordination report", "for testing purposes only",
+    "bid insurance",
+})
+
+# Tokens from entropy audit that are common English words, not PII. Do not add as suspicious_token.
+COMMON_NON_PII_WORDS: frozenset[str] = frozenset({
+    "coordination", "registration", "information", "report", "patient", "care", "clinical",
+    "medical", "treatment", "therapy", "diagnosis", "prescription", "medication", "dosage",
+    "administration", "documentation", "confidential", "summary", "review", "assessment",
+})
+
+# Medication-like pattern: "Word 500mg" or "Word 500" (avoids Metformin 500mg tagged as person).
+MEDICATION_LIKE_PATTERN = re.compile(
+    r"^[A-Za-z][A-Za-z\s\-]+\d+\s*(?:mg|ml|g|mcg|iu|units?)?$",
     re.IGNORECASE,
 )
 
@@ -179,14 +264,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gliner-model",
         type=str,
-        default="urchade/gliner_large-v2.1",
-        help="GLiNER model id (default: gliner_large-v2.1 for higher recall; use urchade/gliner_medium-v2.1 for less GPU/RAM).",
+        default=os.environ.get("ARMOR_GLINER_MODEL", "knowledgator/gliner-x-large"),
+        help="GLiNER model id (default: knowledgator/gliner-x-large or ARMOR_GLINER_MODEL; use urchade/gliner_medium-v2.1 for less RAM).",
     )
     parser.add_argument(
         "--gliner-threshold",
         type=float,
-        default=0.35,
-        help="GLiNER confidence threshold (default 0.35 for better recall on person names and PII; raise to 0.45+ to reduce false positives).",
+        default=0.28,
+        help="GLiNER confidence threshold (default 0.28 for better recall; raise to 0.35+ to reduce false positives).",
     )
     parser.add_argument(
         "--presidio-threshold",
@@ -341,13 +426,24 @@ def chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
     return chunks
 
 
+def _normalize_gliner_person_labels(detections: list[PiiDetection]) -> list[PiiDetection]:
+    """When GLiNER returns 'last name' or 'first name' for a multi-word span, treat as 'person' for better agreement with Qwen/Presidio."""
+    out: list[PiiDetection] = []
+    for p in detections:
+        label_lower = p.label.lower().strip()
+        if label_lower in ("last name", "first name") and " " in p.text.strip():
+            out.append(PiiDetection(text=p.text, label="person", score=max(p.score, 0.6)))
+        else:
+            out.append(p)
+    return out
+
+
 def detect_pii_with_gliner(
     model: GLiNER,
     text: str,
     threshold: float,
 ) -> list[PiiDetection]:
-    # GLiNER (default: urchade/gliner_large-v2.1): zero-shot NER; lower threshold = higher recall, more false positives.
-    # With many labels at once, scores for e.g. "person" can be conservative; default 0.35 helps catch names.
+    # GLiNER: zero-shot NER; lower threshold = higher recall. "person" and full-name normalization improve agreement.
     predictions = model.predict_entities(text, GLINER_PII_LABELS, threshold=threshold)
     dedup: dict[tuple[str, str], PiiDetection] = {}
     for pred in predictions:
@@ -360,7 +456,11 @@ def detect_pii_with_gliner(
         current = dedup.get(key)
         if current is None or score > current.score:
             dedup[key] = PiiDetection(text=value, label=label, score=score)
-    return sorted(dedup.values(), key=lambda x: (-len(x.text), x.text.lower()))
+    raw_list = sorted(dedup.values(), key=lambda x: (-len(x.text), x.text.lower()))
+    raw_list = _normalize_gliner_person_labels(raw_list)
+    raw_list = _dedup_detections(raw_list)
+    filtered = _filter_gliner_label_phrases(raw_list)
+    return _normalize_pii_types_by_pattern(filtered)
 
 
 def _map_to_shared_label(raw_label: str, mapping: dict[str, str]) -> str | None:
@@ -384,11 +484,156 @@ def _dedup_detections(items: list[PiiDetection]) -> list[PiiDetection]:
     return sorted(dedup.values(), key=lambda x: (-len(x.text), x.text.lower()))
 
 
+def _normalize_pii_types_by_pattern(detections: list[PiiDetection]) -> list[PiiDetection]:
+    """Override wrong NER labels when text matches Indian ID patterns to improve precision."""
+    out: list[PiiDetection] = []
+    for p in detections:
+        text = p.text.strip()
+        label = p.label.lower().strip()
+        if AADHAAR_PATTERN.search(text) and label in ("date", "date of birth", "date_of_birth", "date time"):
+            out.append(PiiDetection(text=p.text, label="aadhaar number", score=max(p.score, 0.85)))
+            continue
+        if PAN_PATTERN.search(text) and label == "organization":
+            out.append(PiiDetection(text=p.text, label="pan number", score=max(p.score, 0.85)))
+            continue
+        if GST_NUMBER_PATTERN.search(text) and label == "organization":
+            out.append(PiiDetection(text=p.text, label="gst number", score=max(p.score, 0.85)))
+            continue
+        digits_only = re.sub(r"[\s\-]", "", text)
+        if len(digits_only) == 12 and digits_only.isdigit() and label == "organization":
+            out.append(PiiDetection(text=p.text, label="aadhaar number", score=max(p.score, 0.85)))
+            continue
+        out.append(p)
+    return out
+
+
+def _filter_presidio_false_positives(detections: list[PiiDetection]) -> list[PiiDetection]:
+    """Fix Presidio misclassifications: date→aadhaar when value is Aadhaar; drop/remap organization FPs."""
+    result: list[PiiDetection] = []
+    seen: set[tuple[str, str]] = set()
+    for p in detections:
+        value = p.text.strip()
+        value_lower = value.lower()
+        label = p.label.lower().strip()
+        aadhaar_match = AADHAAR_PATTERN.search(value)
+        if aadhaar_match and label in ("date", "date of birth", "date_time"):
+            span = aadhaar_match.group(0).strip()
+            key = (span.lower(), "aadhaar number")
+            if key not in seen:
+                seen.add(key)
+                result.append(PiiDetection(text=span, label="aadhaar number", score=max(p.score, 0.85)))
+            continue
+        if label == "organization":
+            if value_lower in PII_LABEL_PHRASES or value_lower in DOCUMENT_TITLE_ORGANIZATION_PHRASES:
+                continue
+            # State + pincode (e.g. "Maharashtra - 400001") often misclassified as organization; remap to address.
+            if re.match(r"^[A-Za-z][A-Za-z\s]+-\s*\d{6}$", value.strip()):
+                key = (value.lower(), "address")
+                if key not in seen:
+                    seen.add(key)
+                    result.append(PiiDetection(text=p.text, label="address", score=max(p.score, 0.8)))
+                continue
+            if PAN_PATTERN.search(value):
+                key = (value.lower(), "pan number")
+                if key not in seen:
+                    seen.add(key)
+                    result.append(PiiDetection(text=p.text, label="pan number", score=max(p.score, 0.85)))
+                continue
+            if GST_NUMBER_PATTERN.search(value):
+                key = (value.lower(), "gst number")
+                if key not in seen:
+                    seen.add(key)
+                    result.append(PiiDetection(text=p.text, label="gst number", score=max(p.score, 0.85)))
+                continue
+            if aadhaar_match:
+                span = aadhaar_match.group(0).strip()
+                key = (span.lower(), "aadhaar number")
+                if key not in seen:
+                    seen.add(key)
+                    result.append(PiiDetection(text=span, label="aadhaar number", score=max(p.score, 0.85)))
+                continue
+        key = (value.lower(), label)
+        if key not in seen:
+            seen.add(key)
+            result.append(p)
+    return sorted(result, key=lambda x: (-len(x.text), x.text.lower()))
+
+
+def _filter_gliner_label_phrases(detections: list[PiiDetection]) -> list[PiiDetection]:
+    """Drop GLiNER detections where the value is a form/section label (e.g. 'Aadhaar Number'), not actual PII."""
+    return [p for p in detections if p.text.strip().lower() not in PII_LABEL_PHRASES]
+
+
+def _is_likely_medication(text: str) -> bool:
+    """True if text looks like a medication + dose (e.g. 'Metformin 500mg'), not a person name."""
+    t = text.strip()
+    if not t or len(t) > 80:
+        return False
+    return bool(MEDICATION_LIKE_PATTERN.match(t))
+
+
+def _precision_filter(detections: list[PiiDetection]) -> list[PiiDetection]:
+    """
+    Drop common false positives across Presidio, GLiNER, Qwen to improve precision.
+    - person/name: drop when text is purely numeric or looks like medication (e.g. Metformin 500mg).
+    - organization: drop when text is a document/report title phrase.
+    - date of birth: drop when text is only the label (e.g. 'DOB') not an actual date.
+    - suspicious_token: drop when token is a common non-PII word (e.g. Coordination).
+    - bank account number: drop when short numeric string (6–9 digits) likely internal ID.
+    """
+    result: list[PiiDetection] = []
+    for p in detections:
+        text = p.text.strip()
+        value_lower = text.lower()
+        label = p.label.lower().strip()
+        if not text:
+            continue
+        if label in ("person", "name", "first name", "last name"):
+            if text.isdigit():
+                continue
+            if _is_likely_medication(text):
+                continue
+        if label == "organization":
+            if value_lower in DOCUMENT_TITLE_ORGANIZATION_PHRASES:
+                continue
+            if value_lower in PII_LABEL_PHRASES:
+                continue
+        if label in ("date of birth", "date_of_birth", "dob"):
+            if value_lower in ("dob", "d.o.b.", "date of birth") and not re.search(r"\d", text):
+                continue
+        if label == "suspicious_token":
+            if value_lower in COMMON_NON_PII_WORDS:
+                continue
+        if label in ("bank account number", "bank account"):
+            digits_only = re.sub(r"\D", "", text)
+            if 6 <= len(digits_only) <= 9 and digits_only.isdigit():
+                continue
+        result.append(p)
+    return result
+
+
 def shannon_entropy(text: str) -> float:
     if not text:
         return 0.0
     prob = [float(text.count(c)) / len(text) for c in set(text)]
     return -sum(p * math.log2(p) for p in prob)
+
+
+def deterministic_audit_indian_ids(text: str) -> list[PiiDetection]:
+    """Detect Indian IDs by structure only: Aadhaar, PAN, GST number, Udyam registration."""
+    out: list[PiiDetection] = []
+    seen: set[tuple[str, str]] = set()
+    for pattern, label in INDIAN_ID_PATTERNS:
+        for m in pattern.finditer(text):
+            value = m.group(0).strip()
+            if not value:
+                continue
+            key = (value.lower(), label)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(PiiDetection(text=value, label=label, score=1.0))
+    return sorted(out, key=lambda x: (-len(x.text), x.text.lower()))
 
 
 def regex_entropy_audit(text: str) -> list[str]:
@@ -498,7 +743,8 @@ def _detect_pii_with_presidio_subprocess(text: str, threshold: float) -> list[Pi
         current = dedup.get(key)
         if current is None or score > current.score:
             dedup[key] = PiiDetection(text=value, label=label, score=score)
-    return sorted(dedup.values(), key=lambda x: (-len(x.text), x.text.lower()))
+    raw_list = sorted(dedup.values(), key=lambda x: (-len(x.text), x.text.lower()))
+    return _normalize_pii_types_by_pattern(_filter_presidio_false_positives(raw_list))
 
 
 def detect_pii_with_presidio(text: str, threshold: float) -> list[PiiDetection]:
@@ -555,19 +801,42 @@ def detect_pii_with_presidio(text: str, threshold: float) -> list[PiiDetection]:
         current = dedup.get(key)
         if current is None or score > current.score:
             dedup[key] = PiiDetection(text=value, label=label, score=score)
-    return sorted(dedup.values(), key=lambda x: (-len(x.text), x.text.lower()))
+    raw_list = sorted(dedup.values(), key=lambda x: (-len(x.text), x.text.lower()))
+    return _normalize_pii_types_by_pattern(_filter_presidio_false_positives(raw_list))
+
+
+def _canonical_pii_label(label: str) -> str:
+    """Return canonical form for PII label so aadhaar/aadhaar number and pan/pan number merge."""
+    L = label.lower().strip()
+    if L in ("aadhaar", "aadhaar number"):
+        return "aadhaar number"
+    if L in ("pan", "pan number"):
+        return "pan number"
+    if L in ("gst_number", "gst number"):
+        return "gst number"
+    if L in ("date_of_birth", "date of birth", "dob"):
+        return "date of birth"
+    return L
 
 
 def _label_agreement(l1: str, l2: str) -> bool:
-    """True if two labels are considered the same for ensemble agreement (e.g. person/name)."""
+    """True if two labels are considered the same for ensemble agreement and dedupe (e.g. person/name, state/location, date/date of birth)."""
     a, b = l1.lower().strip(), l2.lower().strip()
     if a == b:
+        return True
+    if _canonical_pii_label(a) == _canonical_pii_label(b):
         return True
     if a in ("person", "name") and b in ("person", "name"):
         return True
     if "organization" in a and "organization" in b:
         return True
-    if "address" in a and "address" in b:
+    if "address" in a or "address" in b:
+        if a in ("state", "location", "city", "address", "street address") or "address" in a:
+            if b in ("state", "location", "city", "address", "street address") or "address" in b:
+                return True
+    if a in ("state", "location", "city", "street address") and b in ("state", "location", "city", "address", "street address"):
+        return True
+    if a in ("date", "date of birth", "date_of_birth") and b in ("date", "date of birth", "date_of_birth"):
         return True
     return False
 
@@ -580,16 +849,79 @@ def _group_contains_detection(group: list[PiiDetection], text: str, label: str) 
     return False
 
 
+def _dedupe_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Group duplicate or semi-duplicate findings (same or overlapping text + same/compatible label) into one,
+    count as one entity, and union the found_by NER names for each group.
+    Semi-duplicate: same value or one contains the other, and labels are compatible (e.g. date + date of birth, location + city).
+    """
+    if not findings:
+        return []
+    # Normalize: canonical label, and collect found_by as set per item
+    normalized: list[tuple[str, str, set[str], float, str]] = []
+    for f in findings:
+        value = (f.get("value") or "").strip()
+        pii_type = (f.get("pii_type") or "").strip()
+        if not value or not pii_type:
+            continue
+        canonical = _canonical_pii_label(pii_type)
+        found_by = f.get("found_by") or []
+        if isinstance(found_by, list):
+            by_set = set(str(x).strip().lower() for x in found_by if x)
+        else:
+            by_set = set()
+        score = float(f.get("score", 0.8))
+        normalized.append((value.lower(), canonical, by_set, score, value))  # keep original value for rep
+
+    # Group: same value or one contains the other, AND labels compatible (date/date of birth, location/city/state, etc.)
+    groups: list[list[tuple[str, str, set[str], float, str]]] = []
+    for n in normalized:
+        v_lower, can, by_set, score, v_orig = n
+        merged = False
+        for g in groups:
+            if not _label_agreement(g[0][1], can):
+                continue
+            for _v_l, _c, _by, _sc, _orig in g:
+                if v_lower in _v_l or _v_l in v_lower:
+                    g.append(n)
+                    merged = True
+                    break
+            if merged:
+                break
+        if not merged:
+            groups.append([n])
+
+    out: list[dict[str, Any]] = []
+    for g in groups:
+        # representative = longest value in group; found_by = union of all
+        by_union: set[str] = set()
+        best_val = ""
+        best_score = 0.0
+        for _v_l, _c, _by, _sc, _orig in g:
+            by_union |= _by
+            if len(_orig) > len(best_val) or (len(_orig) == len(best_val) and _sc > best_score):
+                best_val = _orig
+                best_score = _sc
+        out.append({
+            "value": best_val,
+            "pii_type": g[0][1],  # canonical label
+            "score": round(best_score, 4),
+            "found_by": sorted(by_union),
+        })
+    return out
+
+
 def merge_pii_detections(
     detection_groups: list[list[PiiDetection]],
 ) -> list[PiiDetection]:
     merged: dict[tuple[str, str], PiiDetection] = {}
     for group in detection_groups:
         for item in group:
-            key = (item.text.lower(), item.label.lower())
+            canonical = _canonical_pii_label(item.label)
+            key = (item.text.lower(), canonical)
             existing = merged.get(key)
             if existing is None or item.score > existing.score:
-                merged[key] = item
+                merged[key] = PiiDetection(text=item.text, label=canonical, score=item.score)
     return sorted(merged.values(), key=lambda x: (-len(x.text), x.text.lower()))
 
 
@@ -819,6 +1151,14 @@ def synthetic_value_for_type(pii_type: str, original: str) -> str:
         return f"{m:02d}/{d:02d}/{y}"
     if "username" in t:
         return f"user_{seed % 100000}"
+    if "aadhaar" in t:
+        return f"{rng.randint(1000, 9999)} {rng.randint(1000, 9999)} {rng.randint(1000, 9999)}"
+    if "pan" in t:
+        return f"{chr(65 + seed % 26)}{chr(65 + (seed // 26) % 26)}{chr(65 + (seed // 676) % 26)}{chr(65 + (seed // 17576) % 26)}{chr(65 + (seed // 456976) % 26)}{rng.randint(1000, 9999)}{chr(65 + rng.randint(0, 25))}"
+    if "gst_number" in t:
+        return f"{rng.randint(10, 99)}{chr(65 + seed % 26)}{chr(65 + (seed // 26) % 26)}{chr(65 + (seed // 676) % 26)}{chr(65 + (seed // 17576) % 26)}{chr(65 + (seed // 456976) % 26)}{rng.randint(1000, 9999)}{chr(65 + rng.randint(0, 25))}{rng.randint(1, 9)}{chr(65 + rng.randint(0, 25))}{rng.randint(1, 9)}"
+    if "udyam" in t:
+        return f"UDYAM-{chr(65 + seed % 26)}{chr(65 + (seed // 26) % 26)}-{rng.randint(10, 99)}-{rng.randint(100000, 9999999)}"
     return f"<{normalize_label(pii_type)}_{seed % 100000}>"
 
 
@@ -844,6 +1184,14 @@ def datatype_match(value: str, pii_type: str) -> bool:
         return len(digits) >= 8
     if "date" in t:
         return bool(re.search(r"\d", value))
+    if "aadhaar" in t:
+        return bool(AADHAAR_PATTERN.fullmatch(value.strip()))
+    if "pan" in t:
+        return bool(PAN_PATTERN.fullmatch(value.strip()))
+    if "gst_number" in t:
+        return bool(GST_NUMBER_PATTERN.fullmatch(value.strip()))
+    if "udyam" in t:
+        return bool(UDYAM_PATTERN.fullmatch(value.strip()))
     return bool(value.strip())
 
 
@@ -879,19 +1227,14 @@ def _chunk_report(
     def _pii_list(items: list[PiiDetection]) -> list[dict]:
         return [{"value": p.text, "pii_type": p.label, "score": round(p.score, 4)} for p in items]
 
-    presidio_set = {(p.text.lower(), p.label.lower()) for p in presidio_pii}
-    gliner_set = {(p.text.lower(), p.label.lower()) for p in gliner_pii}
-    qwen_set = {(p.text.lower(), p.label.lower()) for p in qwen_pii}
-
     findings_with_source: list[dict] = []
     for p in combined_pii:
-        key = (p.text.lower(), p.label.lower())
         found_by: list[str] = []
-        if key in presidio_set:
+        if _group_contains_detection(presidio_pii, p.text, p.label):
             found_by.append("presidio")
-        if key in gliner_set:
+        if _group_contains_detection(gliner_pii, p.text, p.label):
             found_by.append("gliner")
-        if key in qwen_set:
+        if _group_contains_detection(qwen_pii, p.text, p.label):
             found_by.append("qwen")
         if not found_by:
             found_by.append("audit")
@@ -902,6 +1245,9 @@ def _chunk_report(
             "found_by": found_by,
         })
 
+    # Group duplicate/semi-duplicate findings (same or overlapping text + same label) as one; union found_by
+    findings_deduped = _dedupe_findings(findings_with_source)
+
     return {
         "chunk_index": chunk_index,
         "original": original,
@@ -909,7 +1255,7 @@ def _chunk_report(
         "presidio": _pii_list(presidio_pii),
         "gliner": _pii_list(gliner_pii),
         "qwen": _pii_list(qwen_pii),
-        "findings": findings_with_source,
+        "findings": findings_deduped,
         "replacements": list(replacements),
         "dropped_findings": list(dropped_findings) if dropped_findings else [],
     }
@@ -930,16 +1276,25 @@ def process_chunk(
     progress_file: Path | None = None,
     file_name: str = "",
     total_chunks: int = 1,
+    gliner_model_name: str = "",
+    qwen_ner_model_name: str = "",
 ) -> tuple[str, bool, dict[str, Any]]:
-    logger.info("chunk number : %s", chunk_index)
-    _report_progress(progress_file, stage="presidio", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, chunk_size=len(chunk))
+    chunk_len = len(chunk)
+    logger.info(
+        "Chunk %s: NER requests (length=%s chars, content not logged). Models: Presidio, GLiNER (%s), Qwen NER (Ollama %s)",
+        chunk_index, chunk_len, gliner_model_name or "loaded", qwen_ner_model_name or "?",
+    )
+    _report_progress(progress_file, stage="presidio", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, chunk_size=chunk_len)
+    logger.info("Requesting Presidio (chunk length=%s chars)", chunk_len)
     presidio_pii = detect_pii_with_presidio(chunk, threshold=presidio_threshold)
     _report_progress(progress_file, stage="presidio", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, presidio_count=len(presidio_pii))
+    logger.info("Requesting GLiNER %s (chunk length=%s chars)", gliner_model_name or "model", chunk_len)
     gliner_pii = detect_pii_with_gliner(gliner_model, chunk, threshold=gliner_threshold)
     _report_progress(progress_file, stage="gliner", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, gliner_count=len(gliner_pii))
     qwen_pii: list[PiiDetection] = []
     if use_qwen_ner and _qwen_ner_detect is not None:
         _report_progress(progress_file, stage="qwen_ner", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks)
+        logger.info("Requesting Qwen NER (Ollama %s) (chunk length=%s chars)", qwen_ner_model_name or "?", chunk_len)
         try:
             qwen_raw = _qwen_ner_detect(chunk, threshold=qwen_ner_threshold)
             qwen_pii = [
@@ -949,6 +1304,7 @@ def process_chunk(
             ]
         except Exception as exc:  # pragma: no cover
             logger.warning("Qwen NER (Ollama) failed for chunk: %s", exc)
+    qwen_pii = _normalize_pii_types_by_pattern(qwen_pii)
     _report_progress(progress_file, stage="qwen_ner", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, qwen_count=len(qwen_pii))
     combined_pii = pii_ensemble_agreement(
         [presidio_pii, gliner_pii, qwen_pii],
@@ -964,11 +1320,11 @@ def process_chunk(
         if key in agreed_set:
             continue
         found_by: list[str] = []
-        if _group_contains_detection([presidio_pii], p.text, p.label):
+        if _group_contains_detection(presidio_pii, p.text, p.label):
             found_by.append("presidio")
-        if _group_contains_detection([gliner_pii], p.text, p.label):
+        if _group_contains_detection(gliner_pii, p.text, p.label):
             found_by.append("gliner")
-        if _group_contains_detection([qwen_pii], p.text, p.label):
+        if _group_contains_detection(qwen_pii, p.text, p.label):
             found_by.append("qwen")
         dropped_findings.append({
             "value": p.text,
@@ -984,12 +1340,18 @@ def process_chunk(
             "PII dropped (agreement): %s",
             json.dumps([{"value": d["value"], "pii_type": d["pii_type"], "found_by": d["found_by"]} for d in dropped_findings], ensure_ascii=True),
         )
-    audit_hits = regex_entropy_audit(chunk)
+    indian_pii = deterministic_audit_indian_ids(chunk)
     detected_values = {d.text for d in combined_pii}
+    for p in indian_pii:
+        if p.text not in detected_values:
+            combined_pii.append(p)
+            detected_values.add(p.text)
+    audit_hits = regex_entropy_audit(chunk)
     for hit in audit_hits:
-        if hit not in detected_values:
+        if hit not in detected_values and hit.strip().lower() not in COMMON_NON_PII_WORDS:
             combined_pii.append(PiiDetection(text=hit, label="suspicious_token", score=1.0))
     combined_pii = _dedup_detections(combined_pii)
+    combined_pii = _precision_filter(combined_pii)
     _report_progress(progress_file, stage="agreement", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, agreed_count=len(combined_pii))
 
     if not combined_pii:
@@ -999,6 +1361,10 @@ def process_chunk(
         return chunk, True, report
 
     _report_progress(progress_file, stage="anonymisation", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks)
+    logger.info(
+        "NER result counts (no chunk content): Presidio=%s, GLiNER=%s, Qwen=%s",
+        len(presidio_pii), len(gliner_pii), len(qwen_pii),
+    )
     logger.info(
         "Piis found in the chunk by presidio : %s",
         json.dumps([{"value": p.text, "pii_type": p.label} for p in presidio_pii], ensure_ascii=True),
@@ -1105,6 +1471,8 @@ def process_file(
             progress_file=progress_file,
             file_name=file_path.name,
             total_chunks=len(chunks),
+            gliner_model_name=getattr(args, "gliner_model", ""),
+            qwen_ner_model_name=getattr(args, "qwen_ner_model", ""),
         )
         anonymized_chunks.append(anonymized_chunk)
         chunk_reports.append(report)
@@ -1159,7 +1527,30 @@ def main() -> None:
         raise RuntimeError(f"No supported files found in {args.input_dir}")
 
     logger.info("Loading GLiNER model: %s", args.gliner_model)
-    gliner_model = GLiNER.from_pretrained(args.gliner_model)
+    try:
+        gliner_model = GLiNER.from_pretrained(args.gliner_model)
+    except Exception as e:
+        fallback_model = "urchade/gliner_medium-v2.1"
+        if args.gliner_model == fallback_model:
+            logger.error("GLiNER failed to load %s: %s", args.gliner_model, e)
+            raise
+        logger.warning(
+            "GLiNER large model failed to load (%s), falling back to %s: %s",
+            args.gliner_model, fallback_model, e,
+        )
+        args.gliner_model = fallback_model
+        gliner_model = GLiNER.from_pretrained(fallback_model)
+    logger.info("GLiNER model loaded: %s", args.gliner_model)
+    try:
+        from qwen_ollama_ner_module import OLLAMA_NER_MODEL as _qwen_ner_model
+    except Exception:
+        _qwen_ner_model = os.environ.get("OLLAMA_NER_MODEL", "?")
+    args.qwen_ner_model = getattr(args, "qwen_ner_model", _qwen_ner_model)
+    logger.info(
+        "NER models in use: Presidio (in-process), GLiNER (%s), Qwen NER (Ollama %s). Chunk content is never logged.",
+        args.gliner_model,
+        args.qwen_ner_model,
+    )
 
     script_dir = Path(__file__).resolve().parent
     config_file = script_dir / "config.json"

@@ -79,8 +79,8 @@
               "pii_type": "date",
               "score": 0.85,
               "found_by": [
-                "presidio",
-                "gliner"
+                "gliner",
+                "presidio"
               ]
             },
             {
@@ -138,8 +138,8 @@
           "pii_type": "date",
           "score": 0.85,
           "found_by": [
-            "presidio",
-            "gliner"
+            "gliner",
+            "presidio"
           ]
         },
         {

@@ -1,0 +1,28 @@
+2026-03-16 17:52:00 [INFO] Logging to /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/log/log_2026-03-16_17-52-00.log
+2026-03-16 17:52:00 [INFO] Presidio: available (in-process)
+2026-03-16 17:52:00 [INFO] Qwen NER (Ollama): enabled
+2026-03-16 17:52:00 [INFO] Loading GLiNER model: knowledgator/gliner-x-large
+2026-03-16 17:53:30 [WARNING] GLiNER large model failed to load (knowledgator/gliner-x-large), falling back to urchade/gliner_medium-v2.1: Please install stanza with: `pip install stanza`
+2026-03-16 17:53:36 [INFO] GLiNER model loaded: urchade/gliner_medium-v2.1
+2026-03-16 17:53:36 [INFO] NER models in use: Presidio (in-process), GLiNER (urchade/gliner_medium-v2.1), Qwen NER (Ollama qwen3.5:4b). Chunk content is never logged.
+2026-03-16 17:53:36 [INFO] Processing file name start : PHI_30_en_Government.pdf
+2026-03-16 17:53:36 [INFO] Chunk 1: NER requests (length=1600 chars, content not logged). Models: Presidio, GLiNER (urchade/gliner_medium-v2.1), Qwen NER (Ollama qwen3.5:4b)
+2026-03-16 17:53:36 [INFO] Requesting Presidio (chunk length=1600 chars)
+2026-03-16 17:53:37 [DEBUG] Presidio engine created successfully
+2026-03-16 17:53:37 [DEBUG] Presidio analyze returned 75 raw results
+2026-03-16 17:53:37 [INFO] Requesting GLiNER urchade/gliner_medium-v2.1 (chunk length=1600 chars)
+2026-03-16 17:53:38 [INFO] Requesting Qwen NER (Ollama qwen3.5:4b) (chunk length=1600 chars)
+2026-03-16 17:53:38 [WARNING] Qwen NER (Ollama) failed: Ollama HTTP 404: {"error":"model 'qwen3.5:4b' not found"}
+2026-03-16 17:53:38 [INFO] NER result counts (no chunk content): Presidio=7, GLiNER=4, Qwen=0
+2026-03-16 17:53:38 [INFO] Piis found in the chunk by presidio : [{"value": "BlueCross PPO 778392884 Patient Care Coordination Report", "pii_type": "organization"}, {"value": "Patient Care Coordination Report", "pii_type": "organization"}, {"value": "Jonathan Reed MRN", "pii_type": "person"}, {"value": "Metformin 500mg", "pii_type": "person"}, {"value": "BID Insurance", "pii_type": "organization"}, {"value": "Metformin 500", "pii_type": "person"}, {"value": "1981-04-12", "pii_type": "date"}]
+2026-03-16 17:53:38 [INFO] Piis found in the chunk by gliner : [{"value": "DOB: 1981-04-12", "pii_type": "date of birth"}, {"value": "Jonathan Reed", "pii_type": "person"}, {"value": "1981-04-12", "pii_type": "date of birth"}, {"value": "DOB", "pii_type": "date of birth"}]
+2026-03-16 17:53:38 [INFO] Piis found in the chunk by qwen : []
+2026-03-16 17:53:38 [INFO] Piis found in the chunk (min_agreement=1) : [{"value": "BlueCross PPO 778392884 Patient Care Coordination Report", "pii_type": "organization"}, {"value": "Patient Care Coordination Report", "pii_type": "organization"}, {"value": "Jonathan Reed MRN", "pii_type": "person"}, {"value": "DOB: 1981-04-12", "pii_type": "date of birth"}, {"value": "Metformin 500mg", "pii_type": "person"}, {"value": "BID Insurance", "pii_type": "organization"}, {"value": "Jonathan Reed", "pii_type": "person"}, {"value": "Metformin 500", "pii_type": "person"}, {"value": "Coordination", "pii_type": "suspicious_token"}, {"value": "1981-04-12", "pii_type": "date"}, {"value": "1981-04-12", "pii_type": "date of birth"}, {"value": "778392884", "pii_type": "suspicious_token"}, {"value": "884392", "pii_type": "suspicious_token"}, {"value": "DOB", "pii_type": "date of birth"}]
+2026-03-16 17:54:01 [INFO] original and anonymized value in the chunk : [{"original_value": "Jonathan Reed", "anonymized_value": "John Smith", "pii_type": "person"}, {"original_value": "Jonathan Reed MRN", "anonymized_value": "John Smith MRN", "pii_type": "person"}, {"original_value": "884392", "anonymized_value": "123456", "pii_type": "identification_number"}, {"original_value": "778392884", "anonymized_value": "9988776655", "pii_type": "identification_number"}, {"original_value": "DOB: 1981-04-12", "anonymized_value": "DOB: 1990-07-23", "pii_type": "date of birth"}, {"original_value": "1981-04-12", "anonymized_value": "1990-07-23", "pii_type": "date"}, {"original_value": "BlueCross PPO", "anonymized_value": "HealthCare Plan", "pii_type": "organization"}, {"original_value": "Metformin 500mg", "anonymized_value": "Medication X 500mg", "pii_type": "drug"}, {"original_value": "BlueCross PPO 778392884 Patient Care Coordination Report", "anonymized_value": "Acme Holdings 337", "pii_type": "organization"}, {"original_value": "Patient Care Coordination Report", "anonymized_value": "Acme Holdings 469", "pii_type": "organization"}, {"original_value": "BID Insurance", "anonymized_value": "Acme Holdings 400", "pii_type": "organization"}, {"original_value": "Metformin 500", "anonymized_value": "Jordan Brown", "pii_type": "person"}, {"original_value": "Coordination", "anonymized_value": "Co########on", "pii_type": "suspicious_token"}, {"original_value": "DOB", "anonymized_value": "01/24/1983", "pii_type": "date of birth"}]
+2026-03-16 17:54:01 [INFO] replacement done
+2026-03-16 17:54:01 [INFO] Processing file name end : PHI_30_en_Government.pdf
+2026-03-16 17:54:01 [INFO] number of times all pii anonymized : 1
+2026-03-16 17:54:01 [INFO] number of times it was not : 0
+2026-03-16 17:54:01 [INFO] Report written: /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/db/reports/2026-03-16_17-54-01_report.json
+2026-03-16 17:54:01 [INFO] Config updated: /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/config.json (latest_report=db/reports/2026-03-16_17-54-01_report.json)
+2026-03-16 17:54:01 [INFO] Run meta written: /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/db/runs/2026-03-16_17-54-01/run_meta.json

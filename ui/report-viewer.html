@@ -49,12 +49,22 @@
       </div>
     </div>
     <div class="panel center-panel">
-      <h2>PII found (value, type, confidence, stage)</h2>
+      <h2>Entities by Armor and LLM</h2>
+      <p class="muted">Armor = pipeline (Presidio + GLiNER + Qwen agreement). LLM = LiteLLM NER (run from ARMOR to populate).</p>
+      <h3 style="margin:12px 0 6px 0; font-size:0.8rem; color:#94a3b8;">By Armor</h3>
       <div class="body">
         <table id="findingsTable">
           <thead><tr><th>Value</th><th>Type</th><th>Score</th><th>Found by</th></tr></thead>
           <tbody id="findingsBody"></tbody>
         </table>
+      </div>
+      <h3 style="margin:12px 0 6px 0; font-size:0.8rem; color:#94a3b8;">By LLM</h3>
+      <div class="body">
+        <table id="llmFindingsTable">
+          <thead><tr><th>Value</th><th>Type</th></tr></thead>
+          <tbody id="llmFindingsBody"></tbody>
+        </table>
+        <p id="llmNoData" class="muted" style="display:none;">No LLM entities for this file. Run &quot;Run LLM NER&quot; from ARMOR to compare.</p>
       </div>
       <h2>Anonymised replacements (contextual)</h2>
       <div class="body">
@@ -119,7 +129,7 @@
       out += escapeHtml(text.slice(last));
       return out;
     }
-    function renderFile(data, fileIndex) {
+    async function renderFile(data, fileIndex) {
       const file = data.files[fileIndex];
       if (!file) return;
       const originalEl = document.getElementById('originalText');
@@ -132,6 +142,26 @@
         const color = typeColor(f.pii_type);
         return '<tr><td>' + escapeHtml(f.value) + '</td><td><span class="type-badge" style="background:' + color + '33;color:' + color + '">' + escapeHtml(f.pii_type) + '</span></td><td>' + (f.score != null ? f.score : '') + '</td><td class="found-by">' + escapeHtml(foundBy) + '</td></tr>';
       }).join('');
+      const llmBody = document.getElementById('llmFindingsBody');
+      const llmNoData = document.getElementById('llmNoData');
+      try {
+        const llmRes = await fetch('/api/file-llm-entities/' + encodeURIComponent(file.file_name || ''));
+        const llmData = await llmRes.json();
+        const list = llmData.llm_entities_list || [];
+        if (list.length === 0) {
+          llmBody.innerHTML = '';
+          llmNoData.style.display = 'block';
+        } else {
+          llmNoData.style.display = 'none';
+          llmBody.innerHTML = list.map(e => {
+            const color = typeColor(e.label);
+            return '<tr><td>' + escapeHtml(e.text || '') + '</td><td><span class="type-badge" style="background:' + color + '33;color:' + color + '">' + escapeHtml(e.label || '') + '</span></td></tr>';
+          }).join('');
+        }
+      } catch (e) {
+        llmBody.innerHTML = '';
+        llmNoData.style.display = 'block';
+      }
       const replacementsBody = document.getElementById('replacementsBody');
       replacementsBody.innerHTML = (file.all_replacements || []).map(r => {
         const color = typeColor(r.pii_type);
@@ -171,7 +201,7 @@
           select.innerHTML = data.files.map((f, i) => '<option value="' + i + '">' + escapeHtml(f.file_name) + '</option>').join('');
           select.onchange = () => renderFile(data, parseInt(select.value, 10));
         }
-        renderFile(data, 0);
+        await renderFile(data, 0);
       } catch (e) {
         document.getElementById('originalText').className = 'text-view error';
         document.getElementById('originalText').textContent = 'Error: ' + e.message + '. Select a run from ARMOR or run the pipeline first.';
