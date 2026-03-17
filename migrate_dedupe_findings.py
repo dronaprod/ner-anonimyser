@@ -45,7 +45,7 @@ def main() -> int:
         changed = False
         for file_rec in report.get("files", []):
             chunks = file_rec.get("chunks", [])
-            all_findings = []
+            all_findings_raw = []
             all_dropped = []
             for chunk in chunks:
                 raw = chunk.get("findings", [])
@@ -53,11 +53,15 @@ def main() -> int:
                 if len(deduped) != len(raw):
                     changed = True
                 chunk["findings"] = deduped
-                all_findings.extend(deduped)
+                all_findings_raw.extend(deduped)
                 dropped = chunk.get("dropped_findings", [])
                 if dropped:
                     chunk["dropped_findings"] = _dedupe_findings(dropped)
                     all_dropped.extend(chunk["dropped_findings"])
+            # File-level dedupe: merge same value across chunks (same as pipeline)
+            all_findings = _dedupe_findings(all_findings_raw)
+            if len(all_findings) != len(all_findings_raw):
+                changed = True
             file_rec["all_findings"] = all_findings
             if all_dropped:
                 file_rec["all_dropped_findings"] = _dedupe_findings(all_dropped)

@@ -1,0 +1,11 @@
+2026-03-17 19:13:28 [INFO] Logging to /home/ec2-user/n8n/ner-anonymysation/ner-anonimyser/log/log_2026-03-17_19-13-28.log
+2026-03-17 19:13:28 [INFO] Presidio: available (in-process)
+2026-03-17 19:13:28 [INFO] Qwen NER (Ollama): enabled
+2026-03-17 19:13:28 [INFO] NER: Presidio (EN only), GLiNER (xlarge/gretelai/urchade/arabic by language), Qwen NER (Ollama qwen3.5:4b). Language detected per chunk via Qwen.
+2026-03-17 19:13:28 [INFO] Processing file name start : sample_identity_record_3.pdf
+2026-03-17 19:13:33 [INFO] Chunk 1: detected language=en, NER requests (length=283 chars)
+2026-03-17 19:13:33 [INFO] Requesting Presidio (chunk length=283 chars)
+2026-03-17 19:13:34 [DEBUG] Presidio engine created successfully
+2026-03-17 19:13:34 [DEBUG] Presidio analyze returned 8 raw results
+2026-03-17 19:13:34 [INFO] Requesting GLiNER gliner_xlarge (chunk length=283 chars)
+2026-03-17 19:13:34 [INFO] Loading GLiNER model: knowledgator/gliner-x-large

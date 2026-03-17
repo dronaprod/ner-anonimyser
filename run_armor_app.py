@@ -400,29 +400,55 @@ def list_runs():
     return jsonify({"runs": runs})
 
 
+def _run_dirs_newest_first():
+    """Yield run directories (newest first) by name for deterministic order."""
+    if not RUNS.is_dir():
+        return []
+    try:
+        dirs = [d for d in RUNS.iterdir() if d.is_dir()]
+    except OSError:
+        return []
+    dirs.sort(key=lambda d: d.name, reverse=True)
+    return dirs
+
+
 @app.route("/api/scanned-files")
 def list_scanned_files():
     """List all files that have been scanned; include LLM analysis metrics if present. Exclude deleted files."""
     deleted = _load_deleted_scanned_files()
     by_name = {}
-    for d in sorted(RUNS.iterdir(), reverse=True):
-        if not d.is_dir():
-            continue
+    for d in _run_dirs_newest_first():
+        run_id = d.name
+        created = None
+        file_names_in_run = []
         meta = d / "run_meta.json"
-        if not meta.is_file():
-            continue
-        try:
-            data = json.loads(meta.read_text(encoding="utf-8"))
-            run_id = data.get("run_id", d.name)
-            created = data.get("created_at")
-            for f in data.get("files", []):
-                name = f.get("file_name") or f.get("file")
-                if not name or name in deleted:
-                    continue
-                if name not in by_name:
-                    by_name[name] = {"file_name": name, "last_run_id": run_id, "last_scanned_at": created}
-        except Exception:
-            continue
+        if meta.is_file():
+            try:
+                data = json.loads(meta.read_text(encoding="utf-8"))
+                run_id = data.get("run_id", run_id)
+                created = data.get("created_at")
+                for f in data.get("files", []):
+                    name = f.get("file_name") or f.get("file")
+                    if name and name not in file_names_in_run:
+                        file_names_in_run.append(name)
+            except Exception:
+                pass
+        report_file = d / "report.json"
+        if report_file.is_file():
+            try:
+                report = json.loads(report_file.read_text(encoding="utf-8"))
+                created = created or report.get("created_at")
+                for file_rec in report.get("files", []):
+                    name = file_rec.get("file_name") or file_rec.get("file")
+                    if name and name not in file_names_in_run:
+                        file_names_in_run.append(name)
+            except Exception:
+                pass
+        for name in file_names_in_run:
+            if name in deleted:
+                continue
+            if name not in by_name:
+                by_name[name] = {"file_name": name, "last_run_id": run_id, "last_scanned_at": created}
     # Armor counts from report (deduped) so table shows current deduped entity count
     run_ids_done: set[str] = set()
     for rec in by_name.values():
@@ -469,16 +495,37 @@ def list_scanned_files():
     }
     sorted_list = sorted(by_name.values(), key=lambda x: (x.get("last_scanned_at") or ""), reverse=True)
     latest_run_id = None
-    for d in sorted(RUNS.iterdir(), reverse=True):
-        if d.is_dir() and (d / "run_meta.json").is_file():
+    for d in _run_dirs_newest_first():
+        if (d / "run_meta.json").is_file() or (d / "report.json").is_file():
             latest_run_id = d.name
             break
     return jsonify({"scanned_files": sorted_list, "combined": combined, "latest_run_id": latest_run_id})
 
 
+def _scanned_file_names() -> list[str]:
+    """Return list of all scanned file names (from run_meta), excluding deleted."""
+    deleted = _load_deleted_scanned_files()
+    by_name = {}
+    for d in sorted(RUNS.iterdir(), reverse=True):
+        if not d.is_dir():
+            continue
+        meta = d / "run_meta.json"
+        if not meta.is_file():
+            continue
+        try:
+            data = json.loads(meta.read_text(encoding="utf-8"))
+            for f in data.get("files", []):
+                name = f.get("file_name") or f.get("file")
+                if name and name not in deleted:
+                    by_name[name] = True
+        except Exception:
+            continue
+    return list(by_name.keys())
+
+
 @app.route("/api/run-llm-ner", methods=["POST"])
 def run_llm_ner():
-    """Run LLM NER on first chunk of each scanned file (or provided file list); compare with armor; save metrics."""
+    """Run LLM NER on scanned files. Body: { scope: 'pending' | 'all' } or { files: [...] }. pending = no LLM result yet or had error."""
     global _llm_ner_running
     with _llm_ner_lock:
         if _llm_ner_running:
@@ -488,22 +535,16 @@ def run_llm_ner():
         body = request.get_json(silent=True) or {}
         file_list = body.get("files")
         if not file_list:
-            by_name = {}
-            for d in sorted(RUNS.iterdir(), reverse=True):
-                if not d.is_dir():
-                    continue
-                meta = d / "run_meta.json"
-                if not meta.is_file():
-                    continue
-                try:
-                    data = json.loads(meta.read_text(encoding="utf-8"))
-                    for f in data.get("files", []):
-                        name = f.get("file_name") or f.get("file")
-                        if name:
-                            by_name[name] = True
-                except Exception:
-                    continue
-            file_list = list(by_name.keys())
+            all_scanned = _scanned_file_names()
+            scope = (body.get("scope") or "all").strip().lower()
+            if scope == "pending":
+                llm_analysis = _load_llm_analysis()
+                file_list = [
+                    name for name in all_scanned
+                    if name not in llm_analysis or llm_analysis.get(name, {}).get("llm_error")
+                ]
+            else:
+                file_list = all_scanned
         if not file_list:
             return jsonify({"error": "No scanned files to run LLM NER on"}), 400
         results = _run_llm_ner_for_files(file_list)
@@ -535,16 +576,17 @@ def _migrate_dedupe_findings() -> dict:
             continue
         for file_rec in report.get("files", []):
             chunks = file_rec.get("chunks", [])
-            all_findings = []
+            all_findings_raw = []
             all_dropped = []
             for chunk in chunks:
                 chunk["findings"] = _dedupe_findings(chunk.get("findings", []))
-                all_findings.extend(chunk["findings"])
+                all_findings_raw.extend(chunk["findings"])
                 dropped = chunk.get("dropped_findings", [])
                 if dropped:
                     chunk["dropped_findings"] = _dedupe_findings(dropped)
                     all_dropped.extend(chunk["dropped_findings"])
-            file_rec["all_findings"] = all_findings
+            # Apply same file-level dedupe as pipeline: merge same value across chunks
+            file_rec["all_findings"] = _dedupe_findings(all_findings_raw)
             if all_dropped:
                 file_rec["all_dropped_findings"] = _dedupe_findings(all_dropped)
             elif file_rec.get("all_dropped_findings"):

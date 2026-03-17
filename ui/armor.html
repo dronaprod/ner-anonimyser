@@ -72,10 +72,13 @@
     <h2>Previously scanned files</h2>
     <p style="color:#94a3b8; font-size:12px; margin:0 0 10px 0;">Files that have been scanned in past runs.</p>
     <p style="margin:0 0 10px 0;">
-      <button type="button" class="btn secondary" id="runLlmNerBtn">Run LLM NER</button>
+      <button type="button" class="btn secondary" id="refreshScannedBtn">Refresh list</button>
+      <button type="button" class="btn secondary" id="runNerPendingBtn" style="margin-left:8px;">Run NER for pending LLM evaluation files</button>
+      <button type="button" class="btn secondary" id="runNerAllBtn" style="margin-left:8px;">Run NER for all files</button>
+      <button type="button" class="btn secondary" id="restoreHiddenBtn" style="margin-left:8px;">Restore hidden files</button>
       <span id="llmNerStatus" style="margin-left:10px; font-size:12px; color:#94a3b8;"></span>
-      <button type="button" class="btn secondary" id="restoreScannedBtn" style="margin-left:8px;">Restore all removed files</button>
     </p>
+    <p id="restoreHiddenHint" style="display:none; margin:4px 0 0 0; font-size:12px; color:#94a3b8;">Files you deleted from this list are hidden. Click &quot;Restore hidden files&quot; to show them again.</p>
     <div id="combinedResultsBox" class="combined-results" style="display:none;">
       <h3 style="margin:0 0 8px 0; font-size:0.9rem; color:#e2e8f0;">Combined results (all files)</h3>
       <p style="margin:0; font-size:13px; color:#94a3b8;">
@@ -105,8 +108,12 @@
     <div class="pipeline-stages" id="pipelineStages">
       <span class="stage" data-stage="extract">Extract</span>
       <span class="stage" data-stage="chunking">Chunking</span>
+      <span class="stage" data-stage="language_detection">Language</span>
       <span class="stage" data-stage="presidio">NER Presidio</span>
-      <span class="stage" data-stage="gliner">NER GLiNER</span>
+      <span class="stage" data-stage="gliner_xlarge">GLiNER xlarge</span>
+      <span class="stage" data-stage="gliner_gretelai">GLiNER gretelai</span>
+      <span class="stage" data-stage="gliner_urchade">GLiNER urchade</span>
+      <span class="stage" data-stage="gliner_arabic">GLiNER arabic</span>
       <span class="stage" data-stage="qwen_ner">NER Qwen</span>
       <span class="stage" data-stage="agreement">Agreement</span>
       <span class="stage" data-stage="anonymisation">Anonymisation</span>
@@ -222,7 +229,7 @@
       renderRunScope(uploadedNow);
     }
 
-    const STAGE_ORDER = ['extract','chunking','presidio','gliner','qwen_ner','agreement','anonymisation','chunk_done'];
+    const STAGE_ORDER = ['extract','chunking','language_detection','presidio','gliner_xlarge','gliner_gretelai','gliner_urchade','gliner_arabic','qwen_ner','agreement','anonymisation','chunk_done'];
     function setStageActive(stage) {
       const idx = STAGE_ORDER.indexOf(stage);
       pipelineStages.querySelectorAll('.stage').forEach(el => {
@@ -235,13 +242,15 @@
 
     function appendPipelineLog(p) {
       const stage = (p.stage || 'starting').replace(/_/g, ' ');
-      const key = [p.file, p.chunk_index, p.total_chunks, stage, p.presidio_count, p.gliner_count, p.agreed_count, p.replacements_count].join('|');
+      const key = [p.file, p.chunk_index, p.total_chunks, stage, p.language, p.gliner_model, p.presidio_count, p.gliner_count, p.agreed_count, p.replacements_count].join('|');
       if (key === lastLogKey) return;
       lastLogKey = key;
       const ts = new Date().toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
       const filePart = p.file ? ' File: ' + escapeHtml(p.file) + ' |' : '';
       const chunkPart = (p.chunk_index != null && p.total_chunks != null) ? ' Chunk ' + p.chunk_index + '/' + p.total_chunks + ' |' : '';
       const extra = [];
+      if (p.language != null) extra.push('Language: ' + p.language);
+      if (p.gliner_model != null) extra.push('Model: ' + p.gliner_model);
       if (p.presidio_count != null) extra.push('Presidio: ' + p.presidio_count);
       if (p.gliner_count != null) extra.push('GLiNER: ' + p.gliner_count);
       if (p.qwen_count != null) extra.push('Qwen: ' + p.qwen_count);
@@ -264,19 +273,22 @@
         return;
       }
       const stage = p.stage || 'starting';
+      const stageLabel = stage.replace(/_/g, ' ');
       setStageActive(stage);
       appendPipelineLog(p);
       const parts = [];
       if (p.file) parts.push('<span class="file">File: ' + escapeHtml(p.file) + '</span>');
       if (p.chunk_index != null && p.total_chunks != null)
         parts.push('<span class="chunk-info">Chunk ' + p.chunk_index + '/' + p.total_chunks + '</span>');
+      if (p.language != null) parts.push('Language: ' + escapeHtml(p.language));
+      if (p.gliner_model != null) parts.push('GLiNER: ' + escapeHtml(p.gliner_model));
       if (p.chunk_size != null) parts.push('(' + p.chunk_size + ' chars)');
       if (p.presidio_count != null) parts.push('Presidio: ' + p.presidio_count);
-      if (p.gliner_count != null) parts.push('GLiNER: ' + p.gliner_count);
+      if (p.gliner_count != null) parts.push('GLiNER count: ' + p.gliner_count);
       if (p.qwen_count != null) parts.push('Qwen: ' + p.qwen_count);
       if (p.agreed_count != null) parts.push('Agreed: ' + p.agreed_count);
       if (p.replacements_count != null) parts.push('Replacements: ' + p.replacements_count);
-      liveProgress.innerHTML = '<span>Stage: <strong>' + escapeHtml(stage) + '</strong></span> ' + (parts.length ? ' — ' + parts.join(' · ') : '');
+      liveProgress.innerHTML = '<span>Stage: <strong>' + escapeHtml(stageLabel) + '</strong></span> ' + (parts.length ? ' — ' + parts.join(' · ') : '');
     }
 
     async function pollProgress() {
@@ -364,14 +376,22 @@
       return (isNaN(n) ? '—' : n.toFixed(1)) + '%';
     }
 
-    async function loadScannedFiles() {
+    async function loadScannedFiles(showRefreshStatus) {
+      const refreshBtn = document.getElementById('refreshScannedBtn');
+      if (showRefreshStatus && refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Refreshing…';
+      }
       try {
-        const data = await fetch('/api/scanned-files').then(r => r.json());
+        const res = await fetch('/api/scanned-files');
+        if (!res.ok) throw new Error(res.statusText || 'Request failed');
+        const data = await res.json();
         const list = data.scanned_files || [];
         const combined = data.combined || {};
         if (list.length === 0) {
           document.getElementById('combinedResultsBox').style.display = 'none';
           noScannedFiles.style.display = 'block';
+          noScannedFiles.textContent = 'No previously scanned files.';
           scannedFilesBody.innerHTML = '';
           return;
         }
@@ -409,7 +429,13 @@
       } catch (e) {
         document.getElementById('combinedResultsBox').style.display = 'none';
         noScannedFiles.style.display = 'block';
+        noScannedFiles.textContent = 'Failed to load list: ' + (e.message || 'Unknown error');
         scannedFilesBody.innerHTML = '';
+      } finally {
+        if (refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = 'Refresh list';
+        }
       }
     }
 
@@ -428,13 +454,15 @@
       }
     }
 
-    async function runLlmNer() {
-      const btn = document.getElementById('runLlmNerBtn');
+    async function runLlmNer(scope) {
+      const pendingBtn = document.getElementById('runNerPendingBtn');
+      const allBtn = document.getElementById('runNerAllBtn');
       const statusEl = document.getElementById('llmNerStatus');
-      btn.disabled = true;
-      statusEl.textContent = 'Running LLM NER…';
+      pendingBtn.disabled = true;
+      allBtn.disabled = true;
+      statusEl.textContent = scope === 'pending' ? 'Running NER for pending files…' : 'Running NER for all files…';
       try {
-        const r = await fetch('/api/run-llm-ner', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const r = await fetch('/api/run-llm-ner', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: scope }) });
         const data = await r.json();
         if (!r.ok) {
           statusEl.textContent = 'Error: ' + (data.error || r.statusText);
@@ -445,7 +473,8 @@
       } catch (e) {
         statusEl.textContent = 'Error: ' + (e.message || 'Request failed');
       } finally {
-        btn.disabled = false;
+        pendingBtn.disabled = false;
+        allBtn.disabled = false;
       }
     }
 
@@ -485,18 +514,28 @@
       return escapeHtml(s).replace(/"/g, '&quot;');
     }
 
-    async function restoreScannedFiles() {
+    async function restoreHiddenFiles() {
+      const btn = document.getElementById('restoreHiddenBtn');
+      if (btn) btn.disabled = true;
       try {
         const r = await fetch('/api/restore-scanned-files', { method: 'POST' });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) { alert(data.error || 'Failed'); return; }
-        await loadScannedFiles();
-      } catch (e) { alert(e.message || 'Failed'); }
+        await loadScannedFiles(true);
+        const hint = document.getElementById('restoreHiddenHint');
+        if (hint) hint.style.display = 'none';
+      } catch (e) { alert(e.message || 'Failed'); } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     (async function init() {
-      document.getElementById('runLlmNerBtn').onclick = runLlmNer;
-      document.getElementById('restoreScannedBtn').onclick = restoreScannedFiles;
+      const refreshScannedBtn = document.getElementById('refreshScannedBtn');
+      if (refreshScannedBtn) refreshScannedBtn.onclick = () => loadScannedFiles(true);
+      document.getElementById('runNerPendingBtn').onclick = () => runLlmNer('pending');
+      document.getElementById('runNerAllBtn').onclick = () => runLlmNer('all');
+      const restoreHiddenBtn = document.getElementById('restoreHiddenBtn');
+      if (restoreHiddenBtn) restoreHiddenBtn.onclick = restoreHiddenFiles;
       refreshUploadedDisplay();
       try {
         const p = await fetch('/api/progress').then(r => r.json());

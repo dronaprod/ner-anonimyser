@@ -28,8 +28,20 @@ from gliner_module import GLiNER
 from presidio_module import AnalyzerEngine, NlpEngineProvider
 try:
     from qwen_ollama_ner_module import detect_pii_with_qwen_ollama as _qwen_ner_detect
+    from qwen_ollama_ner_module import detect_language as _detect_language
 except Exception:  # pragma: no cover
     _qwen_ner_detect = None
+    _detect_language = None
+
+# GLiNER model IDs: English uses xlarge + gretelai + urchade; Arabic uses gretelai + urchade + arabic only (no Presidio, no xlarge)
+GLINER_XLARGE_ID = "knowledgator/gliner-x-large"
+GLINER_GRETELAI_ID = "gretelai/gretel-gliner-bi-large-v1.0"
+GLINER_URCHADE_ID = "urchade/gliner_large-v2.1"
+GLINER_ARABIC_ID = "NAMAa-Space/gliner_arabic-v2.1"
+NER_NAME_XLARGE = "gliner_xlarge"
+NER_NAME_GRETELAI = "gretelai_gliner_large"
+NER_NAME_URCHADE = "urchade_gliner_large_2.1_og"
+NER_NAME_ARABIC = "gliner_arabic"
 
 
 SUPPORTED_SUFFIXES = {".pdf", ".docx", ".xlsx", ".txt"}
@@ -820,13 +832,15 @@ def _canonical_pii_label(label: str) -> str:
 
 
 def _label_agreement(l1: str, l2: str) -> bool:
-    """True if two labels are considered the same for ensemble agreement and dedupe (e.g. person/name, state/location, date/date of birth)."""
+    """True if two labels are considered the same for ensemble agreement and dedupe (e.g. person/name, email/email address, date/date of birth)."""
     a, b = l1.lower().strip(), l2.lower().strip()
     if a == b:
         return True
     if _canonical_pii_label(a) == _canonical_pii_label(b):
         return True
     if a in ("person", "name") and b in ("person", "name"):
+        return True
+    if a in ("email", "email address") and b in ("email", "email address"):
         return True
     if "organization" in a and "organization" in b:
         return True
@@ -837,6 +851,8 @@ def _label_agreement(l1: str, l2: str) -> bool:
     if a in ("state", "location", "city", "street address") and b in ("state", "location", "city", "address", "street address"):
         return True
     if a in ("date", "date of birth", "date_of_birth") and b in ("date", "date of birth", "date_of_birth"):
+        return True
+    if a in ("phone number", "phone") and b in ("phone number", "phone"):
         return True
     return False
 
@@ -849,39 +865,78 @@ def _group_contains_detection(group: list[PiiDetection], text: str, label: str) 
     return False
 
 
+# Lazy-loaded GLiNER models (model_id -> GLiNER) to avoid loading all 4 at once
+_gliner_model_cache: dict[str, Any] = {}
+
+def _get_gliner_model(model_id: str) -> GLiNER:
+    if model_id not in _gliner_model_cache:
+        logger.info("Loading GLiNER model: %s", model_id)
+        _gliner_model_cache[model_id] = GLiNER.from_pretrained(model_id)
+    return _gliner_model_cache[model_id]
+
+
 def _dedupe_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
-    Group duplicate or semi-duplicate findings (same or overlapping text + same/compatible label) into one,
-    count as one entity, and union the found_by NER names for each group.
-    Semi-duplicate: same value or one contains the other, and labels are compatible (e.g. date + date of birth, location + city).
+    Group duplicate or semi-duplicate findings into one row; union found_by and take best score/type.
+    (1) Same value (case-insensitive): always merge into one (regardless of type); use type with highest score, union found_by.
+    (2) Contained/containing values with compatible label (e.g. John vs John Smith): merge into one row.
     """
     if not findings:
         return []
-    # Normalize: canonical label, and collect found_by as set per item
+    # Normalize: value_lower, pii_type, found_by set, score, value_orig
     normalized: list[tuple[str, str, set[str], float, str]] = []
     for f in findings:
         value = (f.get("value") or "").strip()
         pii_type = (f.get("pii_type") or "").strip()
-        if not value or not pii_type:
+        if not value:
             continue
+        if not pii_type:
+            pii_type = "entity"
         canonical = _canonical_pii_label(pii_type)
         found_by = f.get("found_by") or []
-        if isinstance(found_by, list):
-            by_set = set(str(x).strip().lower() for x in found_by if x)
-        else:
-            by_set = set()
+        by_set = set(str(x).strip().lower() for x in found_by if x) if isinstance(found_by, list) else set()
         score = float(f.get("score", 0.8))
-        normalized.append((value.lower(), canonical, by_set, score, value))  # keep original value for rep
+        normalized.append((value.lower(), canonical, by_set, score, value))
 
-    # Group: same value or one contains the other, AND labels compatible (date/date of birth, location/city/state, etc.)
-    groups: list[list[tuple[str, str, set[str], float, str]]] = []
+    # Pass 1: group by exact same value (case-insensitive); merge all into one per value
+    by_value: dict[str, list[tuple[str, str, set[str], float, str]]] = {}
     for n in normalized:
+        v_lower = n[0]
+        if v_lower not in by_value:
+            by_value[v_lower] = []
+        by_value[v_lower].append(n)
+
+    pass1: list[tuple[str, str, set[str], float, str]] = []
+    for _v_lower, group in by_value.items():
+        by_union: set[str] = set()
+        best_score = 0.0
+        best_orig = ""
+        best_type = ""
+        for _v_l, can, by_set, score, v_orig in group:
+            by_union |= by_set
+            if score > best_score or (score == best_score and len(v_orig) > len(best_orig)):
+                best_score = score
+                best_orig = v_orig
+                best_type = can
+        if not best_orig:
+            best_orig = group[0][4]
+            best_type = group[0][1]
+            best_score = group[0][3]
+        pass1.append((_v_lower, best_type, by_union, best_score, best_orig))
+
+    # Pass 2: merge contained/containing with compatible label (e.g. John and John Smith)
+    groups: list[list[tuple[str, str, set[str], float, str]]] = []
+    for n in pass1:
         v_lower, can, by_set, score, v_orig = n
         merged = False
         for g in groups:
             if not _label_agreement(g[0][1], can):
                 continue
             for _v_l, _c, _by, _sc, _orig in g:
+                if v_lower == _v_l:
+                    g.append(n)
+                    merged = True
+                    break
                 if v_lower in _v_l or _v_l in v_lower:
                     g.append(n)
                     merged = True
@@ -893,18 +948,21 @@ def _dedupe_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     out: list[dict[str, Any]] = []
     for g in groups:
-        # representative = longest value in group; found_by = union of all
-        by_union: set[str] = set()
+        by_union = set()
         best_val = ""
         best_score = 0.0
+        best_type = ""
         for _v_l, _c, _by, _sc, _orig in g:
             by_union |= _by
             if len(_orig) > len(best_val) or (len(_orig) == len(best_val) and _sc > best_score):
                 best_val = _orig
                 best_score = _sc
+                best_type = _c
+        if not best_type:
+            best_type = g[0][1]
         out.append({
             "value": best_val,
-            "pii_type": g[0][1],  # canonical label
+            "pii_type": best_type,
             "score": round(best_score, 4),
             "found_by": sorted(by_union),
         })
@@ -1011,13 +1069,20 @@ def parse_json_like(text: str) -> dict[str, Any]:
     return {"raw_response": text}
 
 
-def build_qwen_replacement_prompt(chunk: str, detected_pii: list[PiiDetection]) -> tuple[str, str]:
+def build_qwen_replacement_prompt(
+    chunk: str, detected_pii: list[PiiDetection], lang: str = "en"
+) -> tuple[str, str]:
+    lang_rule = (
+        "**Language**: The text is in Arabic. Generate ALL anonymized replacement values in Arabic only "
+        "(e.g. Arabic names, Arabic addresses, Arabic organisation names). Do not use English words for replacements."
+        if lang == "ar"
+        else "**Language**: The text is in English (or another Latin-script language). Generate ALL anonymized replacement values in English only."
+    )
     system = (
         "You are a PII anonymization assistant. Return JSON only: "
         "{\"replacements\":[{\"original_value\":\"...\",\"anonymized_value\":\"...\",\"pii_type\":\"...\"}]}. "
         "Rules: "
-        "(1) **Same language and region**: Names, addresses, organisations must match the original language/region "
-        "(e.g. Swedish name→Swedish name, French→French, Chinese→Chinese, German→German). Do not use English names for non-English originals. "
+        "(1) " + lang_rule + " "
         "(2) **Same type**: name→name, date→date, phone→phone, email→email, organisation→organisation, etc. "
         "(3) **Structurally and contextually similar**: "
         "Dates: preserve the exact format (DD/MM/YYYY vs MM/DD/YYYY vs YYYY-MM-DD, month names, separators). Same era/century if obvious. "
@@ -1035,7 +1100,7 @@ def build_qwen_replacement_prompt(chunk: str, detected_pii: list[PiiDetection]) 
         f"{json.dumps(detected_payload, ensure_ascii=False)}\n\n"
         "Text chunk:\n"
         f"{chunk}\n\n"
-        "Generate one replacement per PII. Same language, region, type, and structure (date format, phone format, etc.). JSON only."
+        "Generate one replacement per PII. Use the SAME language as the text for all replacement values (Arabic→Arabic, English→English). Same type and structure. JSON only."
     )
     return system, user
 
@@ -1100,7 +1165,7 @@ def _infer_phone_prefix(original: str) -> str:
     return "+1"
 
 
-def synthetic_value_for_type(pii_type: str, original: str) -> str:
+def synthetic_value_for_type(pii_type: str, original: str, lang: str = "en") -> str:
     t = pii_type.lower()
     if "suspicious_token" in t:
         return partial_mask(original, visible_ratio=0.3)
@@ -1122,12 +1187,20 @@ def synthetic_value_for_type(pii_type: str, original: str) -> str:
             return f"+49{rng.randint(150, 179)}{rng.randint(1000000, 9999999)}"
         return f"+1-555-{rng.randint(100, 999)}-{rng.randint(1000, 9999)}"
     if "name" in t or "person" in t:
+        if lang == "ar":
+            first = ["أحمد", "محمد", "علي", "خالد", "عمر", "يوسف"][seed % 6]
+            last = ["العلي", "الحسن", "المرعي", "الشامي", "الغربي", "النجار"][(seed // 7) % 6]
+            return f"{first} {last}"
         first = ["Alex", "Jordan", "Taylor", "Casey", "Morgan", "Avery"][seed % 6]
         last = ["Smith", "Johnson", "Clark", "Davis", "Miller", "Brown"][(seed // 7) % 6]
         return f"{first} {last}"
     if "address" in t:
+        if lang == "ar":
+            return f"شارع {rng.randint(10, 999)}، حي النور، الرياض"
         return f"{rng.randint(10, 999)} Example Street, Springfield"
     if "organization" in t or "company" in t:
+        if lang == "ar":
+            return f"شركة الخدمات المتحدة {seed % 1000}"
         return f"Acme Holdings {seed % 1000}"
     if "ssn" in t:
         return f"{rng.randint(100, 999)}-{rng.randint(10, 99)}-{rng.randint(1000, 9999)}"
@@ -1216,26 +1289,18 @@ def _chunk_report(
     chunk_index: int,
     original: str,
     anonymized: str,
-    presidio_pii: list[PiiDetection],
-    gliner_pii: list[PiiDetection],
-    qwen_pii: list[PiiDetection],
+    ner_groups: list[tuple[str, list[PiiDetection]]],
     combined_pii: list[PiiDetection],
     replacements: list[dict[str, str]],
     dropped_findings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Build a serializable report dict for one chunk (for UI/report JSON)."""
+    """Build a serializable report dict for one chunk (for UI/report JSON). ner_groups: (source_name, pii_list)."""
     def _pii_list(items: list[PiiDetection]) -> list[dict]:
         return [{"value": p.text, "pii_type": p.label, "score": round(p.score, 4)} for p in items]
 
     findings_with_source: list[dict] = []
     for p in combined_pii:
-        found_by: list[str] = []
-        if _group_contains_detection(presidio_pii, p.text, p.label):
-            found_by.append("presidio")
-        if _group_contains_detection(gliner_pii, p.text, p.label):
-            found_by.append("gliner")
-        if _group_contains_detection(qwen_pii, p.text, p.label):
-            found_by.append("qwen")
+        found_by: list[str] = [name for name, pii in ner_groups if _group_contains_detection(pii, p.text, p.label)]
         if not found_by:
             found_by.append("audit")
         findings_with_source.append({
@@ -1248,23 +1313,30 @@ def _chunk_report(
     # Group duplicate/semi-duplicate findings (same or overlapping text + same label) as one; union found_by
     findings_deduped = _dedupe_findings(findings_with_source)
 
-    return {
+    report = {
         "chunk_index": chunk_index,
         "original": original,
         "anonymized": anonymized,
-        "presidio": _pii_list(presidio_pii),
-        "gliner": _pii_list(gliner_pii),
-        "qwen": _pii_list(qwen_pii),
         "findings": findings_deduped,
         "replacements": list(replacements),
         "dropped_findings": list(dropped_findings) if dropped_findings else [],
     }
+    for name, pii in ner_groups:
+        report[name] = _pii_list(pii)
+    # Backward compat for run_meta: presidio_count, gliner_count, qwen_count
+    report.setdefault("presidio", [])
+    report.setdefault("qwen", [])
+    gliner_combined = []
+    for name, pii in ner_groups:
+        if name in (NER_NAME_XLARGE, NER_NAME_GRETELAI, NER_NAME_URCHADE, NER_NAME_ARABIC):
+            gliner_combined.extend(_pii_list(pii))
+    report["gliner"] = gliner_combined
+    return report
 
 
 def process_chunk(
     chunk: str,
     chunk_index: int,
-    gliner_model: GLiNER,
     gliner_threshold: float,
     presidio_threshold: float,
     use_qwen_ner: bool,
@@ -1276,21 +1348,63 @@ def process_chunk(
     progress_file: Path | None = None,
     file_name: str = "",
     total_chunks: int = 1,
-    gliner_model_name: str = "",
     qwen_ner_model_name: str = "",
 ) -> tuple[str, bool, dict[str, Any]]:
     chunk_len = len(chunk)
-    logger.info(
-        "Chunk %s: NER requests (length=%s chars, content not logged). Models: Presidio, GLiNER (%s), Qwen NER (Ollama %s)",
-        chunk_index, chunk_len, gliner_model_name or "loaded", qwen_ner_model_name or "?",
-    )
-    _report_progress(progress_file, stage="presidio", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, chunk_size=chunk_len)
-    logger.info("Requesting Presidio (chunk length=%s chars)", chunk_len)
-    presidio_pii = detect_pii_with_presidio(chunk, threshold=presidio_threshold)
-    _report_progress(progress_file, stage="presidio", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, presidio_count=len(presidio_pii))
-    logger.info("Requesting GLiNER %s (chunk length=%s chars)", gliner_model_name or "model", chunk_len)
-    gliner_pii = detect_pii_with_gliner(gliner_model, chunk, threshold=gliner_threshold)
-    _report_progress(progress_file, stage="gliner", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, gliner_count=len(gliner_pii))
+    # Language detection via Qwen (Ollama): English -> all NERs except gliner_arabic; Arabic -> all except Presidio and gliner_xlarge
+    lang = "en"
+    if _detect_language is not None and use_qwen_ner:
+        try:
+            lang = _detect_language(chunk)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Language detection failed, assuming English: %s", exc)
+    logger.info("Chunk %s: detected language=%s, NER requests (length=%s chars)", chunk_index, lang, chunk_len)
+    _report_progress(progress_file, stage="language_detection", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, language=lang, chunk_size=chunk_len)
+
+    # UI stage names for each GLiNER (must match armor.html data-stage)
+    _gliner_stage_map = {
+        NER_NAME_XLARGE: "gliner_xlarge",
+        NER_NAME_GRETELAI: "gliner_gretelai",
+        NER_NAME_URCHADE: "gliner_urchade",
+        NER_NAME_ARABIC: "gliner_arabic",
+    }
+
+    ner_groups: list[tuple[str, list[PiiDetection]]] = []
+
+    if lang == "ar":
+        # Arabic only: gretelai, urchade, gliner_arabic (no Presidio, no xlarge)
+        for model_id, name in [
+            (GLINER_GRETELAI_ID, NER_NAME_GRETELAI),
+            (GLINER_URCHADE_ID, NER_NAME_URCHADE),
+            (GLINER_ARABIC_ID, NER_NAME_ARABIC),
+        ]:
+            ui_stage = _gliner_stage_map.get(name, "gliner")
+            _report_progress(progress_file, stage=ui_stage, file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, gliner_model=name)
+            logger.info("Requesting GLiNER %s (chunk length=%s chars)", name, chunk_len)
+            model = _get_gliner_model(model_id)
+            pii_list = detect_pii_with_gliner(model, chunk, threshold=gliner_threshold)
+            ner_groups.append((name, pii_list))
+        _report_progress(progress_file, stage="gliner_arabic", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, gliner_count=sum(len(p) for _, p in ner_groups))
+    else:
+        # All other languages (en, zh, etc.): Presidio + xlarge, gretelai, urchade — no Arabic GLiNER
+        _report_progress(progress_file, stage="presidio", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, chunk_size=chunk_len)
+        logger.info("Requesting Presidio (chunk length=%s chars)", chunk_len)
+        presidio_pii = detect_pii_with_presidio(chunk, threshold=presidio_threshold)
+        ner_groups.append(("presidio", presidio_pii))
+        _report_progress(progress_file, stage="presidio", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, presidio_count=len(presidio_pii))
+        for model_id, name in [
+            (GLINER_XLARGE_ID, NER_NAME_XLARGE),
+            (GLINER_GRETELAI_ID, NER_NAME_GRETELAI),
+            (GLINER_URCHADE_ID, NER_NAME_URCHADE),
+        ]:
+            ui_stage = _gliner_stage_map.get(name, "gliner")
+            _report_progress(progress_file, stage=ui_stage, file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, gliner_model=name)
+            logger.info("Requesting GLiNER %s (chunk length=%s chars)", name, chunk_len)
+            model = _get_gliner_model(model_id)
+            pii_list = detect_pii_with_gliner(model, chunk, threshold=gliner_threshold)
+            ner_groups.append((name, pii_list))
+        _report_progress(progress_file, stage="gliner_urchade", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, gliner_count=sum(len(p) for _, p in ner_groups if _ != "presidio"))
+
     qwen_pii: list[PiiDetection] = []
     if use_qwen_ner and _qwen_ner_detect is not None:
         _report_progress(progress_file, stage="qwen_ner", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks)
@@ -1305,27 +1419,23 @@ def process_chunk(
         except Exception as exc:  # pragma: no cover
             logger.warning("Qwen NER (Ollama) failed for chunk: %s", exc)
     qwen_pii = _normalize_pii_types_by_pattern(qwen_pii)
+    ner_groups.append(("qwen", qwen_pii))
     _report_progress(progress_file, stage="qwen_ner", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, qwen_count=len(qwen_pii))
+
+    detection_groups = [pii for _, pii in ner_groups]
     combined_pii = pii_ensemble_agreement(
-        [presidio_pii, gliner_pii, qwen_pii],
+        detection_groups,
         min_agreement=min_ner_agreement,
         min_agreement_for_names=min_agreement_for_names,
     )
-    # Build dropped_findings (found by at least one detector but not enough agreement) for diagnostics
-    union = merge_pii_detections([presidio_pii, gliner_pii, qwen_pii])
+    union = merge_pii_detections(detection_groups)
     agreed_set = {(p.text.lower(), p.label.lower()) for p in combined_pii}
     dropped_findings: list[dict[str, Any]] = []
     for p in union:
         key = (p.text.lower(), p.label.lower())
         if key in agreed_set:
             continue
-        found_by: list[str] = []
-        if _group_contains_detection(presidio_pii, p.text, p.label):
-            found_by.append("presidio")
-        if _group_contains_detection(gliner_pii, p.text, p.label):
-            found_by.append("gliner")
-        if _group_contains_detection(qwen_pii, p.text, p.label):
-            found_by.append("qwen")
+        found_by = [name for name, pii in ner_groups if _group_contains_detection(pii, p.text, p.label)]
         dropped_findings.append({
             "value": p.text,
             "pii_type": p.label,
@@ -1357,32 +1467,25 @@ def process_chunk(
     if not combined_pii:
         logger.info("no pii in the chunk")
         _report_progress(progress_file, stage="chunk_done", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, replacements_count=0)
-        report = _chunk_report(chunk_index, chunk, chunk, [], [], [], [], [], dropped_findings=dropped_findings)
+        report = _chunk_report(chunk_index, chunk, chunk, ner_groups, [], [], dropped_findings=dropped_findings)
         return chunk, True, report
 
     _report_progress(progress_file, stage="anonymisation", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks)
     logger.info(
-        "NER result counts (no chunk content): Presidio=%s, GLiNER=%s, Qwen=%s",
-        len(presidio_pii), len(gliner_pii), len(qwen_pii),
+        "NER result counts (no chunk content): %s",
+        ", ".join("%s=%s" % (name, len(pii)) for name, pii in ner_groups),
     )
-    logger.info(
-        "Piis found in the chunk by presidio : %s",
-        json.dumps([{"value": p.text, "pii_type": p.label} for p in presidio_pii], ensure_ascii=True),
-    )
-    logger.info(
-        "Piis found in the chunk by gliner : %s",
-        json.dumps([{"value": p.text, "pii_type": p.label} for p in gliner_pii], ensure_ascii=True),
-    )
-    logger.info(
-        "Piis found in the chunk by qwen : %s",
-        json.dumps([{"value": p.text, "pii_type": p.label} for p in qwen_pii], ensure_ascii=True),
-    )
+    for name, pii in ner_groups:
+        logger.info(
+            "Piis found in the chunk by %s : %s",
+            name, json.dumps([{"value": p.text, "pii_type": p.label} for p in pii], ensure_ascii=True),
+        )
     logger.info(
         "Piis found in the chunk (min_agreement=%s) : %s",
         min_ner_agreement,
         json.dumps([{"value": p.text, "pii_type": p.label} for p in combined_pii], ensure_ascii=True),
     )
-    r_system, r_user = build_qwen_replacement_prompt(chunk, combined_pii)
+    r_system, r_user = build_qwen_replacement_prompt(chunk, combined_pii, lang=lang)
     qwen_response = call_qwen_json(qwen_python, qwen_script, r_system, r_user)
     replacements_raw = qwen_response.get("replacements", [])
 
@@ -1399,7 +1502,7 @@ def process_chunk(
         if "suspicious_token" in pii_type.lower():
             anonymized = partial_mask(original, visible_ratio=0.3)
         elif not datatype_match(anonymized, pii_type):
-            anonymized = synthetic_value_for_type(pii_type, original)
+            anonymized = synthetic_value_for_type(pii_type, original, lang=lang)
         key = (original.lower(), pii_type.lower())
         if key in seen_values:
             continue
@@ -1420,7 +1523,7 @@ def process_chunk(
         normalized.append(
             {
                 "original_value": p.text,
-                "anonymized_value": synthetic_value_for_type(p.label, p.text),
+                "anonymized_value": synthetic_value_for_type(p.label, p.text, lang=lang),
                 "pii_type": p.label,
             },
         )
@@ -1431,7 +1534,7 @@ def process_chunk(
     _report_progress(progress_file, stage="chunk_done", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, replacements_count=len(normalized))
     report = _chunk_report(
         chunk_index, chunk, replaced_chunk,
-        presidio_pii, gliner_pii, qwen_pii, combined_pii, normalized,
+        ner_groups, combined_pii, normalized,
         dropped_findings=dropped_findings,
     )
     return replaced_chunk, bool(normalized), report
@@ -1439,7 +1542,6 @@ def process_chunk(
 
 def process_file(
     file_path: Path,
-    gliner_model: GLiNER,
     args: argparse.Namespace,
 ) -> tuple[str, int, int, list[dict[str, Any]]]:
     logger.info("Processing file name start : %s", file_path.name)
@@ -1459,7 +1561,6 @@ def process_file(
         anonymized_chunk, success, report = process_chunk(
             chunk=chunk,
             chunk_index=index,
-            gliner_model=gliner_model,
             gliner_threshold=args.gliner_threshold,
             presidio_threshold=args.presidio_threshold,
             use_qwen_ner=args.use_qwen_ner,
@@ -1471,7 +1572,6 @@ def process_file(
             progress_file=progress_file,
             file_name=file_path.name,
             total_chunks=len(chunks),
-            gliner_model_name=getattr(args, "gliner_model", ""),
             qwen_ner_model_name=getattr(args, "qwen_ner_model", ""),
         )
         anonymized_chunks.append(anonymized_chunk)
@@ -1526,29 +1626,14 @@ def main() -> None:
     if not selected_files:
         raise RuntimeError(f"No supported files found in {args.input_dir}")
 
-    logger.info("Loading GLiNER model: %s", args.gliner_model)
-    try:
-        gliner_model = GLiNER.from_pretrained(args.gliner_model)
-    except Exception as e:
-        fallback_model = "urchade/gliner_medium-v2.1"
-        if args.gliner_model == fallback_model:
-            logger.error("GLiNER failed to load %s: %s", args.gliner_model, e)
-            raise
-        logger.warning(
-            "GLiNER large model failed to load (%s), falling back to %s: %s",
-            args.gliner_model, fallback_model, e,
-        )
-        args.gliner_model = fallback_model
-        gliner_model = GLiNER.from_pretrained(fallback_model)
-    logger.info("GLiNER model loaded: %s", args.gliner_model)
+    # GLiNER models are lazy-loaded per chunk (English: xlarge, gretelai, urchade; Arabic: gretelai, urchade, arabic)
     try:
         from qwen_ollama_ner_module import OLLAMA_NER_MODEL as _qwen_ner_model
     except Exception:
         _qwen_ner_model = os.environ.get("OLLAMA_NER_MODEL", "?")
     args.qwen_ner_model = getattr(args, "qwen_ner_model", _qwen_ner_model)
     logger.info(
-        "NER models in use: Presidio (in-process), GLiNER (%s), Qwen NER (Ollama %s). Chunk content is never logged.",
-        args.gliner_model,
+        "NER: Presidio (EN only), GLiNER (xlarge/gretelai/urchade/arabic by language), Qwen NER (Ollama %s). Language detected per chunk via Qwen.",
         args.qwen_ner_model,
     )
 
@@ -1564,7 +1649,6 @@ def main() -> None:
     for file_path in selected_files:
         anonymized_text, anonymized_count, not_anonymized_count, chunk_reports = process_file(
             file_path=file_path,
-            gliner_model=gliner_model,
             args=args,
         )
         total_anonymized += anonymized_count
@@ -1573,13 +1657,15 @@ def main() -> None:
         out_file.write_text(anonymized_text, encoding="utf-8")
 
         original_text = extract_text(file_path)
-        all_findings: list[dict] = []
+        all_findings_raw: list[dict] = []
         all_replacements: list[dict] = []
         all_dropped_findings: list[dict] = []
         for cr in chunk_reports:
-            all_findings.extend(cr.get("findings", []))
+            all_findings_raw.extend(cr.get("findings", []))
             all_replacements.extend(cr.get("replacements", []))
             all_dropped_findings.extend(cr.get("dropped_findings", []))
+        # Dedupe across chunks so same value (e.g. email in chunk 1 and 2) appears once with merged found_by
+        all_findings = _dedupe_findings(all_findings_raw)
         file_reports.append({
             "file_name": file_path.name,
             "original_text": original_text,

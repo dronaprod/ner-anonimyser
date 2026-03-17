@@ -242,6 +242,27 @@ def _parse_prose_pii(reply: str) -> list[dict]:
     return out
 
 
+def detect_language(chunk: str) -> str:
+    """
+    Use Qwen via Ollama to detect if the chunk is primarily English or Arabic.
+    Returns "en" for English, "ar" for Arabic; defaults to "en" on failure or unclear.
+    """
+    if not chunk or not chunk.strip():
+        return "en"
+    preview = (chunk[:2000] + "..." if len(chunk) > 2000 else chunk).strip()
+    system = "You are a language detector. Reply with exactly one word: English or Arabic."
+    user = f"What is the primary language of the following text?\n\n{preview}"
+    try:
+        reply = _ollama_chat(OLLAMA_NER_MODEL, system, user)
+    except Exception as e:
+        logger.warning("Language detection (Qwen) failed: %s", e)
+        return "en"
+    reply_lower = (reply or "").strip().lower()
+    if "arabic" in reply_lower or "ar " in reply_lower or reply_lower == "ar":
+        return "ar"
+    return "en"
+
+
 def _ollama_chat(model: str, system: str, user: str) -> str:
     url = f"{OLLAMA_HOST.rstrip('/')}/api/chat"
     payload = {
