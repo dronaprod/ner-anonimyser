@@ -1,0 +1,25 @@
+# Example: ARMOR UI + bind-mounted data. Point OLLAMA_HOST at your Ollama service.
+#
+#   cd deployment && docker compose up --build
+#
+services:
+  armor:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    ports:
+      - "8765:8765"
+    environment:
+      ARMOR_SECRET_KEY: ${ARMOR_SECRET_KEY:-change-me-in-production}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      OLLAMA_NER_MODEL: ${OLLAMA_NER_MODEL:-qwen3.5:4b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:4b}
+    volumes:
+      - armor_db:/app/db
+      - armor_instance:/app/instance
+      - armor_log:/app/log
+
+volumes:
+  armor_db:
+  armor_instance:
+  armor_log:

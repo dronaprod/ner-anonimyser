@@ -1,0 +1,9 @@
+# Copy to config/local.yaml to override defaults (local.yaml is gitignored).
+# Example:
+#
+# mode: cpu
+# qwen:
+#   ollama_ner_model: qwen3.5:4b
+#   ollama_model: qwen3.5:4b
+
+mode: gpu

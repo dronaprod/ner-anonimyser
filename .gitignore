@@ -1,15 +1,17 @@
 .venv/
 __pycache__/
 *.pyc
-./logs/*
-logs/*
 .DS_Store
 .idea
 .vscode
 .pytest_cache
 .ruff_cache
 .coverage
-.pytest_cache
-.pytest_cache
 data/
 db/
+config/local.yaml
+instance/state.yaml
+.env
+# Pipeline + app logs (regenerated on each run)
+log/*.log
+armor.log

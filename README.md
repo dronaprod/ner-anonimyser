@@ -1,30 +1,66 @@
-# ARMOR — Intelligent Contextual Anonymiser
+# Armor Data Anonymizer
 
-PII anonymisation pipeline: Presidio + GLiNER + **Qwen (Ollama)** for NER; **Qwen 9B via Ollama** for contextual anonymisation.
+PII detection and anonymisation: batch pipeline (Presidio + GLiNER + Qwen/Ollama) plus a Flask web UI.
 
-## Storage (`db/`)
+## Layout
 
-- **`db/reports/`** — Final report JSONs from each run.
-- **`db/uploads/`** — Uploaded files (via ARMOR UI).
-- **`db/runs/`** — Per-run data: `run_id/run_meta.json` (file list, chunk logs), `run_id/report.json` (copy of report).
+| Path | Purpose |
+|------|---------|
+| **`app/`** | Single Python package: Flask app (`create_app`), pipeline (`pipeline.py`), NER services, models, routers, config loaders |
+| **`config/`** | Versioned YAML (`default.yaml`); optional **`local.yaml`** (gitignored) for overrides |
+| **`instance/`** | Runtime state (`state.yaml` — `latest_report`, `updated_at`) |
+| **`deployment/`** | Docker + Gunicorn |
+| **`log/`** | Rotating log files (see `config/default.yaml`) |
+| **`scripts/`** | Maintenance utilities |
+| **`tests/`** | Manual / smoke scripts |
+| **`ui/`** | Static front-end assets |
+| **`.env`** | Secrets and environment overrides (copy from `.env.example`; not committed) |
+| **`main.py`** | **Entry point**: web server by default, or `main.py pipeline …` for the CLI |
+| **`wsgi.py`** | Gunicorn / WSGI hosting |
 
-## ARMOR UI
+Rename this repository directory to `armor_data_anonymizer` if you want the folder name to match the product name; paths in code are resolved from the project root automatically.
 
-1. Start the app:
-   ```bash
-   .venv/bin/python run_armor_app.py
-   ```
-2. Open **http://127.0.0.1:8765/** in the browser.
-3. Upload one or more files (PDF, DOCX, XLSX, TXT).
-4. Click **Run anonymisation** (runs pipeline on `db/uploads/`, writes to `db/reports/` and `db/runs/`).
-5. View **Processed files** (name, entities found, types, chunks) and **Chunk processing details** (per-chunk size, Presidio/GLiNER/Qwen/agreed/replacements counts).
-6. Click **View report** to open the detailed diff-style report (original vs anonymised, PII table, replacements).
+## Configuration
 
-Port: set `ARMOR_PORT` to override 8765. Python: set `ARMOR_PYTHON` to the interpreter that has the pipeline deps.
+1. **`config/default.yaml`** — `mode`, `qwen`, `paths`, `pipeline`, `flask`, `logging`, `security`.
+2. **`config/local.yaml`** — optional overrides (create from `config/local.example.yaml`).
+3. **`.env`** — `ARMOR_SECRET_KEY`, `ARMOR_PORT`, `OLLAMA_*`, `LITELLM_*`, etc.
 
-## Pipeline (CLI)
+Pipeline subprocess runs **`python -m app.pipeline`** (see `pipeline.module` in YAML) so imports stay correct.
 
-- **NER**: Presidio, GLiNER, Qwen NER (Ollama). `OLLAMA_NER_MODEL` (default: `qwen3.5:9b`).
-- **Anonymisation**: `run_qwen_ollama.py` via Ollama. `OLLAMA_MODEL` (default: `qwen3.5:9b`).
-- **Reports**: Default `--report-dir` is `db/reports`. Each run also writes `db/runs/<timestamp>/run_meta.json` and `report.json`.
-- Ensure Ollama is running and the Qwen model is pulled (e.g. `ollama pull qwen3.5:9b`).
+**Python API:** `from app.config import load_armor_config, apply_qwen_runtime_settings`, `from app.models import PiiDetection`, NER from `app.services.ner`.
+
+## Run
+
+```bash
+cd /path/to/project
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env   # then edit
+.venv/bin/python main.py
+```
+
+Open **http://127.0.0.1:8765/** (port from `ARMOR_PORT`).
+
+**Pipeline only (CLI):**
+
+```bash
+.venv/bin/python main.py pipeline --input-dir ./db/uploads --num-files 1 --report-dir ./db/reports
+```
+
+**Production:**
+
+```bash
+gunicorn -c deployment/gunicorn.conf.py 'wsgi:app'
+```
+
+Docker: see `deployment/README.md`.
+
+## Anonymisation worker
+
+Ollama chat script: **`app/anonymize/ollama.py`** (default `--qwen-script`). Alternatives: `app/anonymize/huggingface.py`, `app/anonymize/stub.py`.
+
+## GLiNER / Ollama
+
+- Default GLiNER: `knowledgator/gliner-x-large`. Lower memory: `ARMOR_GLINER_MODEL=urchade/gliner_medium-v2.1`.
+- Ollama: `OLLAMA_HOST`, `OLLAMA_MODEL` / `OLLAMA_NER_MODEL`; **`mode: cpu`** in YAML sets CPU-friendly defaults via `apply_qwen_runtime_settings`.

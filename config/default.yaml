@@ -1,0 +1,41 @@
+# ARMOR default configuration (version controlled).
+# Override with config/local.yaml (optional) or environment variables (ARMOR_*).
+#
+# Mutable runtime keys (latest_report, updated_at) live in instance/state.yaml
+# and are updated by the anonymisation pipeline.
+
+mode: gpu
+
+qwen:
+  ollama_ner_model: null
+  ollama_model: null
+  ollama_num_gpu: null
+
+paths:
+  # Relative to project root unless absolute
+  data_root: db
+  ui_dir: ui
+  log_dir: log
+
+flask:
+  max_content_length_mb: 200
+
+pipeline:
+  # Subprocess uses ``python -m <module>`` so ``app.*`` imports resolve.
+  module: app.pipeline
+  script: app/pipeline.py
+  timeout_seconds: 3600
+  python_executable: null
+
+chunk:
+  size: 1600
+  overlap: 200
+
+logging:
+  level: INFO
+  # Relative to project root; null = console only
+  file: log/armor.log
+
+security:
+  # Set ARMOR_SECRET_KEY or FLASK_SECRET_KEY in production
+  secret_key: null

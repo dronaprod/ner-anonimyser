@@ -95,7 +95,7 @@
         <tr>
           <th>File name</th><th>Last run</th><th>Last scanned</th>
           <th>Entities (Armor)</th><th>Entities (LLM)</th><th>Same</th><th>Different (LLM)</th>
-          <th>Recall %</th><th>Precision %</th><th>Report</th><th>Delete</th>
+          <th>Recall %</th><th>Precision %</th><th>Re-evaluate</th><th>Report</th><th>Delete</th>
         </tr>
       </thead>
       <tbody id="scannedFilesBody"></tbody>
@@ -116,6 +116,7 @@
       <span class="stage" data-stage="gliner_arabic">GLiNER arabic</span>
       <span class="stage" data-stage="qwen_ner">NER Qwen</span>
       <span class="stage" data-stage="agreement">Agreement</span>
+      <span class="stage" data-stage="qwen_judge">Qwen judge</span>
       <span class="stage" data-stage="anonymisation">Anonymisation</span>
       <span class="stage" data-stage="chunk_done">Done</span>
     </div>
@@ -136,7 +137,7 @@
     <h2>Processed files (last run)</h2>
     <table class="file-list-table">
       <thead>
-        <tr><th>File name</th><th>Entities found</th><th>Types</th><th>Chunks</th><th>Reanalyse</th><th>Report</th></tr>
+        <tr><th>File name</th><th>Entities found</th><th>Types</th><th>Chunks</th><th>Re-evaluate</th><th>Report</th></tr>
       </thead>
       <tbody id="fileListBody"></tbody>
     </table>
@@ -229,7 +230,16 @@
       renderRunScope(uploadedNow);
     }
 
-    const STAGE_ORDER = ['extract','chunking','language_detection','presidio','gliner_xlarge','gliner_gretelai','gliner_urchade','gliner_arabic','qwen_ner','agreement','anonymisation','chunk_done'];
+    const STAGE_ORDER = ['extract','chunking','language_detection','presidio','gliner_xlarge','gliner_gretelai','gliner_urchade','gliner_arabic','qwen_ner','agreement','qwen_judge','anonymisation','chunk_done'];
+    let armorQwenProgressLabel = 'Qwen';
+    async function refreshArmorSettings() {
+      try {
+        const s = await fetch('/api/settings').then(r => r.json());
+        armorQwenProgressLabel = s.qwen_progress_label || 'Qwen';
+        const el = document.querySelector('.stage[data-stage="qwen_ner"]');
+        if (el && s.qwen_ner_tab_label) el.textContent = s.qwen_ner_tab_label;
+      } catch (_) { /* offline */ }
+    }
     function setStageActive(stage) {
       const idx = STAGE_ORDER.indexOf(stage);
       pipelineStages.querySelectorAll('.stage').forEach(el => {
@@ -253,7 +263,7 @@
       if (p.gliner_model != null) extra.push('Model: ' + p.gliner_model);
       if (p.presidio_count != null) extra.push('Presidio: ' + p.presidio_count);
       if (p.gliner_count != null) extra.push('GLiNER: ' + p.gliner_count);
-      if (p.qwen_count != null) extra.push('Qwen: ' + p.qwen_count);
+      if (p.qwen_count != null) extra.push((p.qwen_label || 'Qwen') + ': ' + p.qwen_count);
       if (p.agreed_count != null) extra.push('Agreed: ' + p.agreed_count);
       if (p.replacements_count != null) extra.push('Replacements: ' + p.replacements_count);
       const extraStr = extra.length ? ' ' + extra.join(', ') : '';
@@ -285,7 +295,7 @@
       if (p.chunk_size != null) parts.push('(' + p.chunk_size + ' chars)');
       if (p.presidio_count != null) parts.push('Presidio: ' + p.presidio_count);
       if (p.gliner_count != null) parts.push('GLiNER count: ' + p.gliner_count);
-      if (p.qwen_count != null) parts.push('Qwen: ' + p.qwen_count);
+      if (p.qwen_count != null) parts.push((p.qwen_label || 'Qwen') + ': ' + p.qwen_count);
       if (p.agreed_count != null) parts.push('Agreed: ' + p.agreed_count);
       if (p.replacements_count != null) parts.push('Replacements: ' + p.replacements_count);
       liveProgress.innerHTML = '<span>Stage: <strong>' + escapeHtml(stageLabel) + '</strong></span> ' + (parts.length ? ' — ' + parts.join(' · ') : '');
@@ -420,11 +430,15 @@
           const recall = fmtPct(f.recall_pct);
           const precision = fmtPct(f.precision_pct);
           const reportLink = '<a href="/report-viewer.html?run_id=' + encodeURIComponent(f.last_run_id || '') + '" target="_blank" class="btn secondary" style="padding:6px 12px; text-decoration:none;">View report</a>';
+          const reevalBtn = '<button type="button" class="btn secondary btn-reanalyse" style="padding:6px 12px;" data-file="' + escapeAttr(f.file_name) + '" title="Run full anonymisation on this file (must still be in uploads)">Re-evaluate</button>';
           const delBtn = '<button type="button" class="btn danger btn-delete-file" style="padding:6px 12px;" data-filename="' + escapeAttr(f.file_name) + '">Delete</button>';
-          return '<tr' + (justAnalysed ? ' class="row-just-analysed"' : '') + '><td>' + fileCell + '</td><td>' + escapeHtml(f.last_run_id || '—') + '</td><td>' + escapeHtml(scannedAt) + '</td><td>' + armorEnt + '</td><td>' + llmEnt + '</td><td>' + same + '</td><td>' + diffLlm + '</td><td>' + recall + '</td><td>' + precision + '</td><td>' + reportLink + '</td><td>' + delBtn + '</td></tr>';
+          return '<tr' + (justAnalysed ? ' class="row-just-analysed"' : '') + '><td>' + fileCell + '</td><td>' + escapeHtml(f.last_run_id || '—') + '</td><td>' + escapeHtml(scannedAt) + '</td><td>' + armorEnt + '</td><td>' + llmEnt + '</td><td>' + same + '</td><td>' + diffLlm + '</td><td>' + recall + '</td><td>' + precision + '</td><td>' + reevalBtn + '</td><td>' + reportLink + '</td><td>' + delBtn + '</td></tr>';
         }).join('');
         scannedFilesBody.querySelectorAll('.btn-delete-file').forEach(btn => {
           btn.onclick = () => deleteScannedFile(btn.getAttribute('data-filename'));
+        });
+        scannedFilesBody.querySelectorAll('.btn-reanalyse').forEach(btn => {
+          btn.onclick = () => startRun([btn.getAttribute('data-file')]);
         });
       } catch (e) {
         document.getElementById('combinedResultsBox').style.display = 'none';
@@ -491,7 +505,7 @@
       const run = await fetch('/api/runs/' + runId).then(r => r.json());
       fileListBody.innerHTML = (run.files || []).map(f => {
         const types = (f.entity_types || []).join(', ') || '—';
-        const reanalyseBtn = '<button type="button" class="btn secondary btn-reanalyse" style="padding:6px 12px;" data-file="' + escapeAttr(f.file_name) + '">Reanalyse</button>';
+        const reanalyseBtn = '<button type="button" class="btn secondary btn-reanalyse" style="padding:6px 12px;" data-file="' + escapeAttr(f.file_name) + '" title="Run full anonymisation on this file">Re-evaluate</button>';
         return '<tr><td>' + escapeHtml(f.file_name) + '</td><td>' + (f.entity_count ?? 0) + '</td><td class="types">' + escapeHtml(types) + '</td><td>' + (f.chunks_processed ?? 0) + '</td><td>' + reanalyseBtn + '</td><td><a href="/report-viewer.html?run_id=' + encodeURIComponent(runId) + '" target="_blank" class="btn secondary" style="padding:6px 12px; text-decoration:none;">View report</a></td></tr>';
       }).join('');
       fileListBody.querySelectorAll('.btn-reanalyse').forEach(btn => {
@@ -499,7 +513,7 @@
       });
       const allLogs = (run.files || []).flatMap(f => (f.chunk_logs || []).map(c => ({ file: f.file_name, ...c })));
       chunkLogsBody.innerHTML = allLogs.length ? allLogs.map(c => {
-        return '<div class="chunk-log"><span class="chunk-idx">Chunk ' + c.chunk_index + '</span> <span class="size">' + (c.chunk_size || 0) + ' chars</span> — ' + (c.file ? escapeHtml(c.file) + ' — ' : '') + 'Presidio: ' + (c.presidio_count || 0) + ', GLiNER: ' + (c.gliner_count || 0) + ', Qwen: ' + (c.qwen_count || 0) + ', Agreed: ' + (c.agreed_count || 0) + ', Replacements: ' + (c.replacements_count || 0) + '</div>';
+        return '<div class="chunk-log"><span class="chunk-idx">Chunk ' + c.chunk_index + '</span> <span class="size">' + (c.chunk_size || 0) + ' chars</span> — ' + (c.file ? escapeHtml(c.file) + ' — ' : '') + 'Presidio: ' + (c.presidio_count || 0) + ', GLiNER: ' + (c.gliner_count || 0) + ', ' + escapeHtml(armorQwenProgressLabel) + ': ' + (c.qwen_count || 0) + ', Agreed: ' + (c.agreed_count || 0) + ', Replacements: ' + (c.replacements_count || 0) + '</div>';
       }).join('') : '<p style="color:#64748b;">No chunk data.</p>';
     }
 
@@ -530,6 +544,7 @@
     }
 
     (async function init() {
+      await refreshArmorSettings();
       const refreshScannedBtn = document.getElementById('refreshScannedBtn');
       if (refreshScannedBtn) refreshScannedBtn.onclick = () => loadScannedFiles(true);
       document.getElementById('runNerPendingBtn').onclick = () => runLlmNer('pending');
