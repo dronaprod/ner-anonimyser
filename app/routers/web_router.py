@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
-
 from flask import Blueprint, current_app, jsonify, request, send_from_directory
 
 from app.config import load_armor_config
@@ -12,6 +10,8 @@ from app.config import load_armor_config
 log = logging.getLogger(__name__)
 
 bp = Blueprint("armor_web", __name__)
+
+_UI_PAGES = "pages"
 
 
 def _paths():
@@ -21,13 +21,20 @@ def _paths():
 @bp.route("/")
 def index():
     p = _paths()
-    return send_from_directory(p.ui_dir, "armor.html")
+    return send_from_directory(p.ui_dir / _UI_PAGES, "armor.html")
 
 
 @bp.route("/report-viewer.html")
 def report_viewer():
     p = _paths()
-    return send_from_directory(p.ui_dir, "report-viewer.html")
+    return send_from_directory(p.ui_dir / _UI_PAGES, "report-viewer.html")
+
+
+@bp.route("/index.html")
+def simple_report_page():
+    """Standalone latest-report viewer (same as static ``pages/index.html``)."""
+    p = _paths()
+    return send_from_directory(p.ui_dir / _UI_PAGES, "index.html")
 
 
 @bp.route("/report.json")

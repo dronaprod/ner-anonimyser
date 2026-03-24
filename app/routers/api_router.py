@@ -23,7 +23,14 @@ from app.services.core import (
     scanned_file_names,
 )
 from app.services.json_io import read_json
-from app.config import load_armor_config, normalize_mode, qwen_public_display_name
+from app.config import (
+    get_armor_stages,
+    load_armor_config,
+    normalize_mode,
+    pipeline_providers_list,
+    qwen_public_display_name,
+)
+from app.config.prompts_loader import armor_prompts_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +53,9 @@ def api_armor_settings():
         "mode": mode,
         "qwen_ner_tab_label": "NER Qwen CPU" if mode == "cpu" else "NER Qwen",
         "qwen_progress_label": qwen_public_display_name(mode),
+        "pipeline_providers": pipeline_providers_list(),
+        "armor_stages": get_armor_stages(cfg),
+        "armor_prompts": armor_prompts_snapshot(),
     })
 
 

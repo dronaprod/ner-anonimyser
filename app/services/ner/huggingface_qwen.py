@@ -8,20 +8,9 @@ import json
 import re
 from typing import Any
 
-PII_LABELS = [
-    "person", "name", "email", "phone number", "address", "organization",
-    "date", "ssn", "passport number", "credit card number", "bank account number",
-    "ip address", "username",
-]
+from app.config.prompts_loader import build_litellm_ner_system_prompt, slm_ner_canonical_labels
 
-QWEN_NER_SYSTEM = (
-    "You are a PII (personally identifiable information) extraction assistant. "
-    "Given a text chunk, output a JSON array of all PII entities found. "
-    "Use only this exact JSON format, nothing else: [{\"text\": \"exact span\", \"label\": \"type\"}]. "
-    "Allowed labels: person, name, email, phone number, address, organization, date, ssn, passport number, "
-    "credit card number, bank account number, ip address, username. "
-    "Return only the JSON array, no markdown or explanation."
-)
+PII_LABELS = slm_ner_canonical_labels()
 
 _MODEL: Any = None
 _TOKENIZER: Any = None
@@ -98,7 +87,7 @@ def detect_pii_with_qwen(text: str, threshold: float = 0.5) -> list[dict]:
     chunk = text[:MAX_INPUT_CHARS] if len(text) > MAX_INPUT_CHARS else text
     user_msg = f"Extract all PII from this text as JSON array:\n\n{chunk}"
     messages = [
-        {"role": "system", "content": QWEN_NER_SYSTEM},
+        {"role": "system", "content": build_litellm_ner_system_prompt()},
         {"role": "user", "content": user_msg},
     ]
     try:

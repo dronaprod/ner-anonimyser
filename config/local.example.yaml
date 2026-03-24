@@ -5,5 +5,23 @@
 # qwen:
 #   ollama_ner_model: qwen3.5:4b
 #   ollama_model: qwen3.5:4b
+#
+# Stage/model registry (see config/default.yaml `armor_stages`):
+# armor_stages:
+#   ner:
+#     languages:
+#       en:
+#         models:
+#           - id: qwen_ner
+#             kind: generative
+#             weight: 0.3
+#             provider: ollama
+#             model: qwen3.5:4b
+#   slm_judge:
+#     provider: vllm
+#     model: meta-llama/Llama-3.1-8B-Instruct
+#   anonymiser:
+#     provider: litellm
+#     model: openai/gpt-4o-mini
 
 mode: gpu

@@ -5,6 +5,8 @@ Load order (each layer overrides the previous):
   1. ``<repo>/config/default.yaml``
   2. ``<repo>/config/local.yaml`` (optional)
   3. ``<repo>/instance/state.yaml`` — ``latest_report``, ``updated_at`` (written by pipeline)
+
+Prompts and GLiNER/Presidio registry live in Python: ``app.config.prompts_loader``, ``app.config.ner_registry``.
 """
 from __future__ import annotations
 
@@ -123,6 +125,12 @@ def apply_qwen_runtime_settings(mode: str | None, cfg: dict | None = None) -> st
     else:
         if qwen_block.get("ollama_num_gpu") is not None:
             os.environ["OLLAMA_NUM_GPU"] = str(qwen_block["ollama_num_gpu"])
+        ner = qwen_block.get("ollama_ner_model")
+        if ner is not None and str(ner).strip():
+            os.environ.setdefault("OLLAMA_NER_MODEL", str(ner).strip())
+        om = qwen_block.get("ollama_model")
+        if om is not None and str(om).strip():
+            os.environ.setdefault("OLLAMA_MODEL", str(om).strip())
     return m
 
 

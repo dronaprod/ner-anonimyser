@@ -1,6 +1,7 @@
 """
-LiteLLM / OpenAI-compatible API for PII NER (same labels and obligations as Qwen).
-Uses GPT OSS 20B via openai base_url. Returns list of {"text", "label", "score"}.
+LiteLLM / OpenAI-compatible API for PII NER.
+System prompt and obligations: app.config.prompts_loader.build_litellm_ner_system_prompt.
+Returns list of {"text", "label", "score"}.
 Credentials via env: LITELLM_OPENAI_API_KEY, LITELLM_OPENAI_BASE_URL (optional LITELLM_MODEL).
 """
 from __future__ import annotations
@@ -11,49 +12,14 @@ import os
 import re
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from app.config.prompts_loader import build_litellm_ner_system_prompt
 
-# Same obligation labels and examples as Qwen for comparable NER
-OBLIGATIONS = [
-    ("aadhaar", "Indian Aadhaar: exactly 12 digits, with optional spaces or dashes between groups of 4.", ["1234 5678 9012", "1234 5678 9123"]),
-    ("pan", "Indian PAN: exactly 5 letters, 4 digits, 1 letter.", ["ABCDE1234F", "AABCT1234D"]),
-    ("gst_number", "Indian GST number: 15 characters.", ["22AAAAA0000A1Z5", "27ABCDE1234F1Z5"]),
-    ("date_of_birth", "Date of birth: any format including DD-Mon-YYYY.", ["1981-04-12", "15-Aug-1990"]),
-    ("date", "Date in any format.", ["1981-04-12", "15-Aug-1990", "01-Apr-2020"]),
-    ("person", "Full person name.", ["Jonathan Reed", "Rahul Sharma", "Ramesh Sharma"]),
-    ("name", "Person name or part.", ["John", "Smith"]),
-    ("email", "Email address.", ["user@example.com"]),
-    ("phone number", "Phone number with digits.", ["+91 98765 43210"]),
-    ("address", "Street address, city, or location.", ["123 Main Street", "Mumbai", "123, MG Road, Mumbai"]),
-    ("organization", "Company or institution.", ["Acme Corp", "Sharma Enterprises"]),
-    ("location", "Place, city, country.", ["New Delhi", "Maharashtra"]),
-    ("ssn", "Social Security Number XXX-XX-XXXX.", ["123-45-6789"]),
-    ("udyam_number", "Udyam registration UDYAM-XX-XX-XXXXXX.", ["UDYAM-MH-12-1234567"]),
-]
+logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://llm-alpha.us.secloredev.io"
 # OpenAI-compatible servers often expose chat at /v1; ensure we use it
 OPENAI_API_PATH = "/v1"
 DEFAULT_MODEL = "gpt-oss-20b"  # or model id as returned by the endpoint
-
-
-def _build_system_prompt() -> str:
-    lines = [
-        "You are a PII checker. Extract every PII span from the CHUNK.",
-        "You MUST detect: Indian Aadhaar (12 digits), PAN (5 letters+4 digits+1 letter), GST (15 chars), dates (any format including DD-Mon-YYYY), person names, addresses, organizations.",
-        "Return ONLY a JSON array: [{\"text\": \"exact span\", \"label\": \"label\"}].",
-        "Use these labels: aadhaar, pan, gst_number, date, date_of_birth, person, name, email, phone number, address, organization, location, ssn, udyam_number.",
-        "",
-        "OBLIGATIONS with examples:",
-    ]
-    for label, desc, examples in OBLIGATIONS:
-        lines.append(f"  - {label}: {desc} Examples: {examples}")
-    lines.append("")
-    lines.append("Reply with only the JSON array, no other text.")
-    return "\n".join(lines)
-
-
-SYSTEM_PROMPT = _build_system_prompt()
 
 
 def _parse_json_array(reply: str) -> list[dict]:
@@ -112,7 +78,7 @@ def detect_pii_with_litellm(
         resp = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": build_litellm_ner_system_prompt()},
                 {"role": "user", "content": user_content},
             ],
             max_tokens=2048,

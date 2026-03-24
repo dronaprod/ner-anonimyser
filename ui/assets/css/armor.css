@@ -1,0 +1,362 @@
+body {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  margin: 0;
+  padding: 16px;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.brand {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #38bdf8;
+  margin-bottom: 4px;
+}
+
+.tagline {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  margin-bottom: 20px;
+}
+
+.section {
+  background: #1e293b;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.section h2 {
+  margin: 0 0 12px 0;
+  font-size: 0.9rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.upload-zone {
+  border: 2px dashed #475569;
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.upload-zone:hover {
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
+.upload-zone.disabled {
+  pointer-events: none;
+  opacity: 0.6;
+  cursor: not-allowed;
+  border-color: #334155;
+}
+
+.upload-zone.disabled:hover {
+  border-color: #334155;
+  color: #94a3b8;
+}
+
+.upload-zone input {
+  display: none;
+}
+
+.btn {
+  background: #38bdf8;
+  color: #0f172a;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn:hover {
+  background: #7dd3fc;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn.secondary {
+  background: #334155;
+  color: #e2e8f0;
+}
+
+.btn.danger {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.btn.danger:hover {
+  background: #dc2626;
+}
+
+.combined-results {
+  background: #0f172a;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  border: 1px solid #334155;
+}
+
+.badge-just-analysed {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #38bdf8;
+  color: #0f172a;
+}
+
+tr.row-just-analysed {
+  background: rgba(56, 189, 248, 0.08);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th,
+td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #334155;
+}
+
+th {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.chunk-log {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: #0f172a;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.chunk-log .chunk-idx {
+  color: #38bdf8;
+}
+
+.chunk-log .size {
+  color: #94a3b8;
+}
+
+.file-list-table .types {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.status {
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.status.running {
+  background: #1e3a5f;
+  color: #7dd3fc;
+}
+
+.status.error {
+  background: #451a1a;
+  color: #fca5a5;
+}
+
+.status.success {
+  background: #14532d;
+  color: #86efac;
+}
+
+#chunkLogsBody {
+  max-height: 400px;
+  overflow: auto;
+}
+
+.pipeline-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.pipeline-stages .stage {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #334155;
+  color: #94a3b8;
+}
+
+.pipeline-stages .stage.active {
+  background: #38bdf8;
+  color: #0f172a;
+}
+
+.pipeline-stages .stage.done {
+  background: #14532d;
+  color: #86efac;
+}
+
+.live-progress {
+  font-size: 13px;
+  color: #94a3b8;
+  margin-top: 10px;
+  min-height: 24px;
+}
+
+.live-progress .file {
+  color: #e2e8f0;
+}
+
+.live-progress .chunk-info {
+  color: #38bdf8;
+}
+
+.live-progress .error {
+  color: #fca5a5;
+}
+
+.uploaded-file-list {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.uploaded-file-list .file-name {
+  display: inline-block;
+  margin-right: 8px;
+  margin-bottom: 2px;
+}
+
+.pipeline-log-section {
+  margin-top: 14px;
+}
+
+.pipeline-log-section > h3 {
+  margin: 0 0 8px 0;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.pipeline-log {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  background: #0f172a;
+  padding: 10px;
+  border-radius: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  color: #94a3b8;
+}
+
+.pipeline-log .log-line {
+  margin-bottom: 2px;
+  white-space: nowrap;
+}
+
+.pipeline-log .log-line .ts {
+  color: #64748b;
+}
+
+.pipeline-log .log-line .file {
+  color: #38bdf8;
+}
+
+.pipeline-log .log-line .stage {
+  color: #86efac;
+}
+
+.hint-line {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.subtle {
+  color: #94a3b8;
+  font-size: 12px;
+  margin: 0 0 10px 0;
+}
+
+.toolbar {
+  margin: 0 0 10px 0;
+}
+
+.toolbar .btn + .btn {
+  margin-left: 8px;
+}
+
+.toolbar-status {
+  margin-left: 10px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.restore-hint {
+  display: none;
+  margin: 4px 0 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.restore-hint.visible {
+  display: block;
+}
+
+.combined-results h3 {
+  margin: 0 0 8px 0;
+  font-size: 0.9rem;
+  color: #e2e8f0;
+}
+
+.combined-results p {
+  margin: 0;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.combined-stat-recall {
+  color: #38bdf8;
+}
+
+.combined-stat-precision {
+  color: #86efac;
+}
+
+.btn-inline {
+  padding: 6px 12px;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.llm-err {
+  color: #fca5a5;
+  display: block;
+  font-size: 11px;
+}
+
+.chunk-section-intro {
+  color: #94a3b8;
+}
+
+.no-data {
+  color: #64748b;
+}
+
+.status pre {
+  margin-top: 8px;
+  font-size: 11px;
+}

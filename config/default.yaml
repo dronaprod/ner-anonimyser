@@ -7,8 +7,9 @@
 mode: gpu
 
 qwen:
-  ollama_ner_model: null
-  ollama_model: null
+  # Default Ollama tags (GPU path); CPU mode in code still defaults to qwen3.5:4b for both if unset.
+  ollama_ner_model: qwen3.5:4b
+  ollama_model: qwen3.5:9b
   ollama_num_gpu: null
 
 paths:
@@ -39,3 +40,91 @@ logging:
 security:
   # Set ARMOR_SECRET_KEY or FLASK_SECRET_KEY in production
   secret_key: null
+
+# ---------------------------------------------------------------------------
+# Stage & model registry (pipeline / UI). GLiNER HF ids: app.config.ner_registry (keep in sync with model_name below).
+# SLM prompts & obligations: app.config.prompts_loader.
+# Providers: custom | vllm | ollama | litellm
+# ---------------------------------------------------------------------------
+armor_stages:
+  flow:
+    - extract
+    - chunk
+    - ner
+    - deterministic_ner
+    - confidence_calibration
+    - agreement
+    - slm_judge
+    - anonymisation
+    - done
+
+  extract:
+    models: []
+
+  chunk:
+    models: []
+
+  ner:
+    default_language: en
+    languages:
+      en:
+        models:
+          - id: presidio
+            kind: classifier
+            weight: 0.2
+            label: Presidio
+          - id: gliner_xlarge
+            kind: classifier
+            weight: 0.22
+            model_name: knowledgator/gliner-x-large
+          - id: gliner_gretelai
+            kind: classifier
+            weight: 0.22
+            model_name: gretelai/gretel-gliner-bi-large-v1.0
+          - id: gliner_urchade
+            kind: classifier
+            weight: 0.16
+            model_name: urchade/gliner_large-v2.1
+          - id: slm_ner
+            kind: generative
+            weight: 0.2
+            provider: litellm # ollama/litellm
+            model: gpt-oss-20b # qwen3.5:4b/gpt-oss-20b
+      ar:
+        models:
+          - id: gliner_gretelai
+            kind: classifier
+            weight: 0.25
+            model_name: gretelai/gretel-gliner-bi-large-v1.0
+          - id: gliner_urchade
+            kind: classifier
+            weight: 0.25
+            model_name: urchade/gliner_large-v2.1
+          - id: gliner_arabic
+            kind: classifier
+            weight: 0.25
+            model_name: NAMAa-Space/gliner_arabic-v2.1
+          - id: slm_ner
+            kind: generative
+            weight: 0.25
+            provider: litellm # ollama/litellm
+            model: gpt-oss-20b # qwen3.5:4b/gpt-oss-20b
+
+  deterministic_ner:
+    enabled: true
+
+  confidence_calibration:
+    threshold: 0.6
+
+  agreement:
+    threshold: 0.5
+    min_detectors_agreeing: 1
+
+  slm_judge:
+    provider: litellm # ollama/litellm
+    model: gpt-oss-20b # qwen3.5:4b/gpt-oss-20b
+
+  anonymiser:
+    type: slm
+    provider: litellm # ollama/litellm 
+    model: gpt-oss-20b # qwen3.5:4b/gpt-oss-20b

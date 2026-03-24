@@ -36,6 +36,20 @@ from app.config import (
     qwen_public_display_name,
     write_armor_state,
 )
+from app.config.ner_registry import (
+    GLINER_ARABIC_ID,
+    GLINER_GRETELAI_ID,
+    GLINER_PII_LABELS,
+    GLINER_PII_LABELS_SET,
+    GLINER_URCHADE_ID,
+    GLINER_XLARGE_ID,
+    NER_NAME_ARABIC,
+    NER_NAME_GRETELAI,
+    NER_NAME_URCHADE,
+    NER_NAME_XLARGE,
+    PRESIDIO_TO_SHARED_LABEL,
+)
+from app.config.prompts_loader import get_anonymiser_system_prompt
 from app.models import DEFAULT_MIN_NER_CONFIDENCE, PiiDetection
 from app.utils.text import chunk_text
 
@@ -51,117 +65,7 @@ except Exception:  # pragma: no cover
     _detect_language = None
     _qwen_judge_spans = None
 
-# GLiNER model IDs: English uses xlarge + gretelai + urchade; Arabic uses gretelai + urchade + arabic only (no Presidio, no xlarge)
-GLINER_XLARGE_ID = "knowledgator/gliner-x-large"
-GLINER_GRETELAI_ID = "gretelai/gretel-gliner-bi-large-v1.0"
-GLINER_URCHADE_ID = "urchade/gliner_large-v2.1"
-GLINER_ARABIC_ID = "NAMAa-Space/gliner_arabic-v2.1"
-NER_NAME_XLARGE = "gliner_xlarge"
-NER_NAME_GRETELAI = "gretelai_gliner_large"
-NER_NAME_URCHADE = "urchade_gliner_large_2.1_og"
-NER_NAME_ARABIC = "gliner_arabic"
-
-
 SUPPORTED_SUFFIXES = {".pdf", ".docx", ".xlsx", ".txt"}
-GLINER_PII_LABELS = [
-
-    # Identity
-    "person",
-    "name",
-    "first name",
-    "last name",
-    "date of birth",
-
-    # Government IDs
-    "aadhaar number",
-    "pan number",
-    "gst number",
-    "national id",
-    "tax id",
-    "certificate license number",
-
-    # Healthcare
-    "medical record number",
-    "health plan beneficiary number",
-
-    # Contact
-    "email address",
-    "phone number",
-
-    # Address
-    "street address",
-    "address",
-    "city",
-    "state",
-    "postcode",
-    "country",
-
-    # Network / Device
-    "ipv4 address",
-    "ipv6 address",
-    "device identifier",
-    "unique identifier",
-
-    # Organization IDs
-    "employee id",
-    "customer id",
-
-    # Financial
-    "account number",
-    "bank routing number",
-
-    # Vehicle
-    "license plate number",
-    "vehicle identifier",
-
-    # Biometric
-    "biometric identifier"
-]
-GLINER_PII_LABELS_SET = set(GLINER_PII_LABELS)
-PRESIDIO_TO_SHARED_LABEL = {
-
-    # Identity
-    "PERSON": "person",
-
-    # Contact
-    "EMAIL_ADDRESS": "email address",
-    "PHONE_NUMBER": "phone number",
-
-    # Location
-    "LOCATION": "location",
-
-    # Dates
-    "DATE_TIME": "date",
-
-    # Government IDs
-    "US_SSN": "ssn",
-    "US_PASSPORT": "passport number",
-    "US_DRIVER_LICENSE": "driver license number",
-
-    # Indian IDs
-    "IN_AADHAAR": "aadhaar number",
-    "IN_PAN": "pan number",
-    "IN_PASSPORT": "passport number",
-    "IN_VEHICLE_REGISTRATION": "vehicle registration number",
-
-    # Financial
-    "CREDIT_CARD": "credit card number",
-    "IBAN_CODE": "bank account number",
-    "US_BANK_NUMBER": "bank account number",
-
-    # Network
-    "IP_ADDRESS": "ip address",
-    "MAC_ADDRESS": "mac address",
-
-    # Internet
-    "URL": "url",
-
-    # Healthcare
-    "MEDICAL_LICENSE": "medical license number",
-
-    # Crypto
-    "CRYPTO": "crypto wallet address",
-}
 
 LONG_NUMBER_PATTERN = re.compile(r"\b\d{6,}\b")
 CARD_LIKE_PATTERN = re.compile(r"\b(?:\d[ -]?){12,20}\b")
@@ -1236,25 +1140,7 @@ def build_qwen_replacement_prompt(
     lang: str = "en",
     qwen_display_name: str = "Qwen",
 ) -> tuple[str, str]:
-    lang_rule = (
-        "**Language**: The text is in Arabic. Generate ALL anonymized replacement values in Arabic only "
-        "(e.g. Arabic names, Arabic addresses, Arabic organisation names). Do not use English words for replacements."
-        if lang == "ar"
-        else "**Language**: The text is in English (or another Latin-script language). Generate ALL anonymized replacement values in English only."
-    )
-    system = (
-        "You are a PII anonymization assistant. Return JSON only: "
-        "{\"replacements\":[{\"original_value\":\"...\",\"anonymized_value\":\"...\",\"pii_type\":\"...\"}]}. "
-        "Rules: "
-        "(1) " + lang_rule + " "
-        "(2) **Same type**: name→name, date→date, phone→phone, email→email, organisation→organisation, etc. "
-        "(3) **Structurally and contextually similar**: "
-        "Dates: preserve the exact format (DD/MM/YYYY vs MM/DD/YYYY vs YYYY-MM-DD, month names, separators). Same era/century if obvious. "
-        "Phones: preserve country code pattern and separators (e.g. +46..., 0xx..., (0xx) ...). "
-        "IDs/numbers: preserve length and separator pattern (e.g. SSN dashes, card spaces). "
-        "Addresses: same country/region style (street format, postal pattern). "
-        "Output only the JSON object."
-    )
+    system = get_anonymiser_system_prompt(lang)
     detected_payload = [
         {"value": item.text, "pii_type": item.label, "confidence": round(item.score, 4)}
         for item in detected_pii
@@ -1533,7 +1419,7 @@ def process_chunk(
     logger.info("Chunk %s: detected language=%s, NER requests (length=%s chars)", chunk_index, lang, chunk_len)
     _report_progress(progress_file, stage="language_detection", file=file_name, chunk_index=chunk_index, total_chunks=total_chunks, language=lang, chunk_size=chunk_len)
 
-    # UI stage names for each GLiNER (must match armor.html data-stage)
+    # UI stage names for each GLiNER (must match pages/armor.html data-stage)
     _gliner_stage_map = {
         NER_NAME_XLARGE: "gliner_xlarge",
         NER_NAME_GRETELAI: "gliner_gretelai",

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NER Anonymisation Report</title>
+  <link rel="stylesheet" href="/assets/css/base.css" />
+  <link rel="stylesheet" href="/assets/css/report.css" />
+</head>
+<body>
+  <div class="header">
+    <h1>NER Anonymisation Report</h1>
+    <span class="meta" id="meta"></span>
+  </div>
+  <div class="summary" id="summary"></div>
+  <div class="main">
+    <div class="panel">
+      <h2>Original text</h2>
+      <div class="body">
+        <select id="fileSelect" hidden></select>
+        <div id="originalText" class="text-view loading">Loading report…</div>
+      </div>
+    </div>
+    <div class="panel center-panel">
+      <h2>PII found (value, type, confidence, stage)</h2>
+      <div class="body">
+        <table id="findingsTable">
+          <thead><tr><th>Value</th><th>Type</th><th>Score</th><th>Found by</th></tr></thead>
+          <tbody id="findingsBody"></tbody>
+        </table>
+      </div>
+      <h2>Anonymised replacements (contextual)</h2>
+      <div class="body">
+        <table id="replacementsTable">
+          <thead><tr><th>Original</th><th>Anonymised</th><th>Type</th></tr></thead>
+          <tbody id="replacementsBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Anonymised text</h2>
+      <div class="body">
+        <div id="anonymizedText" class="text-view"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/assets/js/pages/simple-report.js"></script>
+</body>
+</html>

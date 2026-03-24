@@ -8,6 +8,35 @@ from app.config.paths import (
     pipeline_python_executable,
     pipeline_timeout_seconds,
 )
+from app.config.armor_stages import (
+    PIPELINE_PROVIDERS,
+    get_armor_stages,
+    normalize_provider,
+    pipeline_providers_list,
+)
+from app.config.ner_registry import (
+    GLINER_ARABIC_ID,
+    GLINER_GRETELAI_ID,
+    GLINER_PII_LABELS,
+    GLINER_PII_LABELS_SET,
+    GLINER_URCHADE_ID,
+    GLINER_XLARGE_ID,
+    NER_NAME_ARABIC,
+    NER_NAME_GRETELAI,
+    NER_NAME_URCHADE,
+    NER_NAME_XLARGE,
+    PRESIDIO_TO_SHARED_LABEL,
+)
+from app.config.prompts_loader import (
+    armor_prompts_snapshot,
+    build_litellm_ner_system_prompt,
+    build_slm_ner_system_prompt,
+    get_anonymiser_system_prompt,
+    get_slm_judge_system_prompt,
+    gliner_pii_labels,
+    ner_obligations_tuples,
+    slm_ner_canonical_labels,
+)
 from app.config.settings import (
     CONFIG_DIR,
     DEFAULT_CPU_OLLAMA_ANON_MODEL,
@@ -29,6 +58,29 @@ from app.config.settings import (
 )
 
 __all__ = [
+    "PIPELINE_PROVIDERS",
+    "get_armor_stages",
+    "normalize_provider",
+    "pipeline_providers_list",
+    "GLINER_ARABIC_ID",
+    "GLINER_GRETELAI_ID",
+    "GLINER_PII_LABELS",
+    "GLINER_PII_LABELS_SET",
+    "GLINER_URCHADE_ID",
+    "GLINER_XLARGE_ID",
+    "NER_NAME_ARABIC",
+    "NER_NAME_GRETELAI",
+    "NER_NAME_URCHADE",
+    "NER_NAME_XLARGE",
+    "PRESIDIO_TO_SHARED_LABEL",
+    "armor_prompts_snapshot",
+    "build_litellm_ner_system_prompt",
+    "build_slm_ner_system_prompt",
+    "get_anonymiser_system_prompt",
+    "get_slm_judge_system_prompt",
+    "gliner_pii_labels",
+    "ner_obligations_tuples",
+    "slm_ner_canonical_labels",
     "CONFIG_DIR",
     "DOTENV_PATH",
     "DEFAULT_CPU_OLLAMA_ANON_MODEL",

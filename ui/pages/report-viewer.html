@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ARMOR — Detailed Report</title>
+  <link rel="stylesheet" href="/assets/css/base.css" />
+  <link rel="stylesheet" href="/assets/css/report-viewer.css" />
+</head>
+<body>
+  <div class="header">
+    <h1>ARMOR — Detailed Report</h1>
+    <span class="meta" id="meta"></span>
+  </div>
+  <div class="summary" id="summary"></div>
+  <div class="main">
+    <div class="panel">
+      <h2>Original text</h2>
+      <div class="body">
+        <select id="fileSelect" hidden></select>
+        <div id="originalText" class="text-view loading">Loading report…</div>
+      </div>
+    </div>
+    <div class="panel center-panel">
+      <h2>Entities by Armor and LLM</h2>
+      <p class="muted">Armor = pipeline (Presidio + GLiNER + Qwen agreement). LLM = LiteLLM NER (run from ARMOR to populate).</p>
+      <h3>By Armor</h3>
+      <div class="body">
+        <table id="findingsTable">
+          <thead><tr><th>Value</th><th>Type</th><th>Score</th><th>Found by</th></tr></thead>
+          <tbody id="findingsBody"></tbody>
+        </table>
+      </div>
+      <h3>By LLM</h3>
+      <div class="body">
+        <table id="llmFindingsTable">
+          <thead><tr><th>Value</th><th>Type</th></tr></thead>
+          <tbody id="llmFindingsBody"></tbody>
+        </table>
+        <p id="llmNoData" class="muted" hidden>No LLM entities for this file. Run &quot;Run LLM NER&quot; from ARMOR to compare.</p>
+      </div>
+      <h2>Anonymised replacements (contextual)</h2>
+      <div class="body">
+        <table id="replacementsTable">
+          <thead><tr><th>Original</th><th>Anonymised</th><th>Type</th></tr></thead>
+          <tbody id="replacementsBody"></tbody>
+        </table>
+      </div>
+      <h2>Dropped (agreement &lt; required) — diagnostics</h2>
+      <p class="muted">PII found by at least one detector but not kept because fewer than required detectors agreed. Names now use lower agreement (see pipeline).</p>
+      <div class="body">
+        <table id="droppedTable">
+          <thead><tr><th>Value</th><th>Type</th><th>Found by</th><th>Reason</th></tr></thead>
+          <tbody id="droppedBody"></tbody>
+        </table>
+        <p id="noDropped" class="muted" hidden>None.</p>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Anonymised text</h2>
+      <div class="body">
+        <div id="anonymizedText" class="text-view"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/assets/js/pages/report-viewer.js"></script>
+</body>
+</html>
